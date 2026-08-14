@@ -1,0 +1,2 @@
+schema_id: legal-rag.config.v1
+resource_manifest: resources/manifests/resources.v1.json

@@ -1,0 +1,30 @@
+{
+  "schema_id": "resources.manifest.v1",
+  "nltk_version": "3.10.0",
+  "resource_root": "resources/nltk_data",
+  "runtime_download_allowed": false,
+  "license_inventory": {
+    "path": "resources/manifests/nltk-licenses.v1.json",
+    "sha256": "2918c8c6e41549719402ff7e9507c7bd1d9fb8c0aa4b7050f2d880a6e1f05de0"
+  },
+  "resources": [
+    {
+      "resource_id": "omw-1.4",
+      "nltk_package_id": "omw-1.4",
+      "relative_path": "corpora/omw-1.4.zip",
+      "origin": "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/omw-1.4.zip",
+      "sha256": "3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d",
+      "size_bytes": 26634772,
+      "license": "Composite per-language licenses; exact embedded texts are checksum-inventoried"
+    },
+    {
+      "resource_id": "wordnet-3.0",
+      "nltk_package_id": "wordnet",
+      "relative_path": "corpora/wordnet.zip",
+      "origin": "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/wordnet.zip",
+      "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59",
+      "size_bytes": 10775600,
+      "license": "WordNet Release 3.0 license"
+    }
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "schema_id": "packages.manifest.v1",
+  "lock_file": "uv.lock",
+  "lock_sha256": "0361510a2416df1e0bfd9d0b7a4685268798a80f3a5e6cf931ca62355244a352",
+  "target": "cpython-3.12.7-windows-x86_64",
+  "packages": [
+    {
+      "name": "absl-py",
+      "version": "2.5.0",
+      "group": "scorer",
+      "license": "Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/58/0a/a10b45aab35b175aded078a462dc8d0c698f5b13946e7cb0869097b78bb6/absl_py-2.5.0-py3-none-any.whl",
+      "artifact_sha256": "0f17b89f2a4eaaedc4f28c622998aa690564b3012a396a4ffad0821007fe03ba",
+      "artifact_size_bytes": 137410
+    },
+    {
+      "name": "coverage",
+      "version": "7.15.4",
+      "group": "dev",
+      "license": "Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/49/b9/5c5f80cc55f5acaaca6dee677626bfcec8c87204a7809b438b08e84f4571/coverage-7.15.4-cp312-cp312-win_amd64.whl",
+      "artifact_sha256": "6befeab5fb2b51c958ca4ac6c5d141a1e8240f4f76e46350f1911963deda49cd",
+      "artifact_size_bytes": 225135
+    },
+    {
+      "name": "m-gpux",
+      "version": "2.9.4",
+      "group": "infra",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/26/62/7818d08b017e19f870fdb836541b078d455ecc17f784a6df92c921536b97/m_gpux-2.9.4-py3-none-any.whl",
+      "artifact_sha256": "bbfe29071e39fa8486b1ec2a12d710a9087f613c15be52fd1fe2f8b94a594e41",
+      "artifact_size_bytes": 151871
+    },
+    {
+      "name": "modal",
+      "version": "1.5.2",
+      "group": "infra",
+      "license": "Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/e3/fe/7e284d889eb3ea2c307e48828eccdd9a984beb2e096bce5577ef796592e9/modal-1.5.2-py3-none-any.whl",
+      "artifact_sha256": "7508a44f8742c6f26be4d28da71f46092ef3bcc07d0f27cbd0ea8c9d6d9fc873",
+      "artifact_size_bytes": 932258
+    },
+    {
+      "name": "mypy",
+      "version": "2.3.0",
+      "group": "dev",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/cf/96/d8b37d819adec6cfccfb1fd3afc1735d94717ddeafb45536db9c6943e09b/mypy-2.3.0-cp312-cp312-win_amd64.whl",
+      "artifact_sha256": "b1942b9314d4c784b8ea1dbab4972603290e5dd5630f06675f13aec97526bc4c",
+      "artifact_size_bytes": 11218346
+    },
+    {
+      "name": "nltk",
+      "version": "3.10.0",
+      "group": "scorer",
+      "license": "Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/6e/89/a0b0f35e2820d6a99d75ea1c11977ee6d5c9e6658eceb45b0c7620881faa/nltk-3.10.0-py3-none-any.whl",
+      "artifact_sha256": "54ff84d4916d3ef127e8953bee0023f6a6b320b75d634a19e06ef056d3d244bf",
+      "artifact_size_bytes": 1716144
+    },
+    {
+      "name": "numpy",
+      "version": "2.5.1",
+      "group": "scorer",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/65/66/53f31807a48a750f9d748da273bc3fcedd12b27ff1f3e373bfec55ef2dc0/numpy-2.5.1-cp312-cp312-win_amd64.whl",
+      "artifact_sha256": "f7d60026c0bdb1380e83bfa7a0419c4577ee4b9a08880afcb6dadeb74c649fa2",
+      "artifact_size_bytes": 12430966
+    },
+    {
+      "name": "pydantic",
+      "version": "2.13.4",
+      "group": "runtime",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl",
+      "artifact_sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba",
+      "artifact_size_bytes": 472262
+    },
+    {
+      "name": "pytest",
+      "version": "9.1.1",
+      "group": "dev",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/24/25/1de2678b631f5a49215c6c96fff41ba892b0a34df68d6d80292b1b48aa7f/pytest-9.1.1-py3-none-any.whl",
+      "artifact_sha256": "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+      "artifact_size_bytes": 386536
+    },
+    {
+      "name": "pytest-cov",
+      "version": "7.1.0",
+      "group": "dev",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl",
+      "artifact_sha256": "a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678",
+      "artifact_size_bytes": 22876
+    },
+    {
+      "name": "pyyaml",
+      "version": "6.0.3",
+      "group": "runtime",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/86/bf/899e81e4cce32febab4fb42bb97dcdf66bc135272882d1987881a4b519e9/pyyaml-6.0.3-cp312-cp312-win_amd64.whl",
+      "artifact_sha256": "5fcd34e47f6e0b794d17de1b4ff496c00986e1c83f7ab2fb8fcfe9616ff7477b",
+      "artifact_size_bytes": 154003
+    },
+    {
+      "name": "ruff",
+      "version": "0.15.22",
+      "group": "dev",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/cb/46/4965251734c2b6fcdca1b1b187d20bcac3af0ee5b083b89c910bb961ce3a/ruff-0.15.22-py3-none-win_amd64.whl",
+      "artifact_sha256": "9be63ba1eb936acd2d1342fb8337c356353706fce233b2a15a09a97037e6acde",
+      "artifact_size_bytes": 11938297
+    },
+    {
+      "name": "six",
+      "version": "1.17.0",
+      "group": "scorer",
+      "license": "MIT",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl",
+      "artifact_sha256": "4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274",
+      "artifact_size_bytes": 11050
+    },
+    {
+      "name": "types-pyyaml",
+      "version": "6.0.12.20260518",
+      "group": "dev",
+      "license": "Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/06/a2/c01db32be2ae7d6a1689972f3c492b149ee4e164b12fdfd9f64b50888215/types_pyyaml-6.0.12.20260518-py3-none-any.whl",
+      "artifact_sha256": "d2150f75a231c9fe9c7463bd29487d93e60bac90400287351384bc2284eba7cd",
+      "artifact_size_bytes": 20312
+    },
+    {
+      "name": "uv",
+      "version": "0.11.32",
+      "group": "dev",
+      "license": "MIT OR Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/57/60/a645cca710448004268b7731c4dc6fc7d084a7c620fc73ecc2127cb61661/uv-0.11.32-py3-none-win_amd64.whl",
+      "artifact_sha256": "855632ee1d2a8491986efa54c562b806cd32477761889a1e13624b519d98a45e",
+      "artifact_size_bytes": 27780686
+    },
+    {
+      "name": "uv-build",
+      "version": "0.11.31",
+      "group": "dev-build",
+      "license": "MIT OR Apache-2.0",
+      "origin": "https://pypi.org/simple",
+      "artifact_url": "https://files.pythonhosted.org/packages/91/f2/b38e0ab166f0bf69907efdd9e3802c0fb17b4d6ae29c79d44e4bedb87f2f/uv_build-0.11.31-py3-none-win_amd64.whl",
+      "artifact_sha256": "b84b2c8f15edeaaffb7728e21e97a832758a6816a2986540b85d4a131ad2dad4",
+      "artifact_size_bytes": 1533294
+    }
+  ]
+}

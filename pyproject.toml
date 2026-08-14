@@ -1,0 +1,104 @@
+[project]
+name = "legal-rag"
+version = "0.1.0"
+description = "Deterministic provider-neutral Vietnamese LegalQA contracts for DSC 2026"
+readme = "README.md"
+requires-python = "==3.12.*"
+dependencies = [
+    # Strict immutable v1 contract validation and structured error locations.
+    "pydantic==2.13.4",
+    # The specification's public CLI contract accepts YAML configuration.
+    "pyyaml==6.0.3",
+]
+
+[project.optional-dependencies]
+scorer = [
+    # Official scoring arithmetic and later pinned PCG64 bootstrap behavior.
+    "numpy==2.5.1",
+    # Organizer METEOR implementation; WordNet data is packaged separately.
+    "nltk==3.10.0",
+    # Direct imports of the organizer-supplied local ROUGE-L implementation.
+    "absl-py==2.5.0",
+    "six==1.17.0",
+]
+infra = [
+    # Optional, config-only in MIL-001; no authentication or workload launch.
+    "modal==1.5.2",
+    "m-gpux==2.9.4",
+]
+
+[dependency-groups]
+dev = [
+    # The selected lock/sync frontend is itself retained inside project `.venv`.
+    "uv==0.11.32",
+    # Retain the exact pure-Python build backend for non-uv build frontends too.
+    "uv-build==0.11.31",
+    # Deterministic formatting and static quality gates.
+    "ruff==0.15.22",
+    "mypy==2.3.0",
+    "types-pyyaml==6.0.12.20260518",
+    # Unit/integration execution and the confirmed aggregate line-coverage gate.
+    "pytest==9.1.1",
+    "coverage==7.15.4",
+    "pytest-cov==7.1.0",
+]
+
+[project.scripts]
+legal-rag = "legal_rag.cli:main"
+
+[build-system]
+requires = ["uv_build==0.11.31"]
+build-backend = "uv_build"
+
+[tool.uv]
+package = true
+required-version = "==0.11.32"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+extend-exclude = [
+    # Immutable organizer scorer/data and generated/local-only state are inputs,
+    # not project Python sources. In particular, the scorer hashes are parity-locked.
+    "Scoring-Program-Task-LegalQA",
+    "artifacts",
+    "data",
+    "resources",
+    ".local",
+    ".venv",
+]
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "SIM", "UP"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.12"
+mypy_path = "src"
+strict = true
+warn_unreachable = true
+pretty = true
+
+[tool.pytest.ini_options]
+addopts = ["-ra", "--strict-config", "--strict-markers", "--basetemp=.local/pytest"]
+testpaths = ["tests"]
+markers = [
+    "integration: local integration tests that may be slower but must remain offline",
+    "gpu: tests requiring paid or physical GPU work; forbidden in MIL-001",
+]
+
+[tool.coverage.run]
+source = ["legal_rag"]
+branch = false
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 85
+show_missing = true
+skip_covered = false
+precision = 2

@@ -1,0 +1,31 @@
+{
+  "schema_id": "nltk.license-inventory.v1",
+  "entries": [
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/als/LICENSE","size_bytes":74,"sha256":"2bb396166717c45534a201e86c9095ed49e1e1d40cb1ed8b3376b360908259d6"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/arb/LICENSE","size_bytes":496,"sha256":"02313f044f2e509033a9fc4aae89184352d4ccff19ed6d63856e8e37fd2c30ac"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/bul/LICENSE","size_bytes":504,"sha256":"53bcc2d22048a88a176f3c1588851358175907987191c22dc29970354d73211f"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/cow/LICENSE","size_bytes":1441,"sha256":"81a3cb1f97e120581d67c71424f2de5dd96325d951f991e8a092147a2a4b2321"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/dan/LICENSE","size_bytes":2095,"sha256":"63ec05fd349d3678bc394d55a686fd6522f89579b7321abf1b0a722fdc41866d"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/ell/LICENSE","size_bytes":9141,"sha256":"74a216e70a322497653b9e3788b381bc2b141e71af40d712ef300fe04006f014"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/fin/LICENSE","size_bytes":4122,"sha256":"6956e44e49a5aaea8597db1378f443c414b5f510613bc5cf3e1a85ddbb4671db"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/fra/LICENSE","size_bytes":31900,"sha256":"3cc8a6f74249a041a4ae4ce708bdfeff8fa7e9cd0b97ef7d3fab139087f73e51"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/heb/LICENSE","size_bytes":1622,"sha256":"a304d7a02f4821a622c73319aa40f848d729b659f9885ae723eb7329d85953b8"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/hrv/LICENSE","size_bytes":85,"sha256":"0768a4c254333b05e177cc8aeb0d47cd31214a66e9bb314120e55dfc4c2e85bd"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/isl/LICENSE","size_bytes":16784,"sha256":"0fa126337d225364847a560c0675a460db65250409caebbb1a0a63c956601c2e"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/ita/LICENSE","size_bytes":1555,"sha256":"10b8d707cf27523a5b0afa138a76ff2eba178c6eb3f0c4c1d757c44c9ae7e2f2"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/iwn/LICENSE","size_bytes":176,"sha256":"2b15cd65301ad67ea17a51e17f80c64349f98b1ab56117ba472c5de47680fd1a"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/jpn/LICENSE","size_bytes":1762,"sha256":"a4be32a83ad0a1cff9a31c23aaa107be20eb843d97c68a2ff72e10ff5ac17cee"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/mcr/LICENSE","size_bytes":907,"sha256":"ccbb7b96a812b37a88a9cb8dfda92dc251e61c5fca5225ff23f5fc3d33b32a70"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/msa/LICENSE","size_bytes":1724,"sha256":"d16fe95c087c732e06758795c95dabc2a18a9b141881005d85b051bf85d587b7"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/nld/LICENSE","size_bytes":36200,"sha256":"e9aef2e157f2a0f4f3fce2c615b5c50ed86fd64d7ed0de93f13fde0a444f87d0"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/nor/LICENSE","size_bytes":2008,"sha256":"2604eac296c565eaccdb61ededb434a4131ffd355019ebbd49980b16c05c038b"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/pol/LICENSE","size_bytes":4305,"sha256":"57a869a263f18c49f8f9f8ea828f7745b2f40772b75c3e8b49a3f651d54d5426"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/por/LICENSE","size_bytes":1450,"sha256":"4c7824c3cf3ca7d5fc68ee0473e16741361a67e242557c0661a0d6bd926ea297"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/ron/LICENSE","size_bytes":304,"sha256":"9feb0e5d5b25678f39af09342782e0e9dcf7de0ec9a03f6ed16254d8a5837694"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/slk/LICENSE","size_bytes":232,"sha256":"1d8f22aa1a326665af296fb175cf01a253ef4905c7f1ffc7c549016f780ff5b8"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/slv/LICENSE","size_bytes":293,"sha256":"5330f69b2e36b349bdd56b62c8a7a806cb32565334be99e560212ad17a157658"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/swe/LICENSE","size_bytes":1120,"sha256":"30f9cbced3b57d27bcccac0b107136e5dadf6d8b8b319dafd9051707ad04c555"},
+    {"resource_id":"omw-1.4","archive_member":"omw-1.4/tha/LICENSE","size_bytes":1748,"sha256":"b3c0ce7a086f7b57ecba69751e8b00371de00c49eba8ca4676fcce43bf2af552"},
+    {"resource_id":"wordnet-3.0","archive_member":"wordnet/LICENSE","size_bytes":1625,"sha256":"7731175a77952e259390b496fab905e57118b8d19ad3a8383c67eee724ff443f"}
+  ]
+}

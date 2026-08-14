@@ -209,6 +209,33 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# DSC LegalQA organizer/private data. Only synthetic, license-safe fixtures may be
+# versioned. Keep the directory itself traversable so the negation rules work.
+/data/*
+!/data/fixtures/
+!/data/fixtures/**
+
+# Generated or local-only project state.
+/.local/
+/resources/nltk_data/
+/resources/cache/
+/models/
+/indices/
+/checkpoints/
+*.sqlite
+*.sqlite3
+*.db-wal
+*.db-shm
+
+# Deterministic MIL-001 reports may be reviewed; all other generated artifacts and
+# every operational telemetry artifact remain local-only.
+/artifacts/*
+!/artifacts/reports/
+!/artifacts/reports/mil-001/
+!/artifacts/reports/mil-001/*.md
+!/artifacts/reports/mil-001/*.json
+/artifacts/operational/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

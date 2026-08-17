@@ -206,36 +206,35 @@ def _first_missing(required: tuple[str, ...], available: tuple[str, ...]) -> str
     return next((resource_id for resource_id in required if resource_id not in available_set), None)
 
 
-def preflight_execution[ConfigT: (PrepareOnlineConfig, LocalOfflineConfig, PrivateModalConfig)](
-    config: ConfigT,
-    *,
-    available_resource_ids: tuple[str, ...],
-    requested_transfers: tuple[ArtifactTransfer, ...] = (),
-) -> ConfigT:
-    """Validate only local policy state; this function cannot submit a workload."""
+def _validate_prepare_transfers(requested_transfers: tuple[ArtifactTransfer, ...]) -> None:
+    if requested_transfers:
+        _fail(
+            "PREPARE_TRANSFER_UNSUPPORTED",
+            "prepare-online does not accept run-artifact transfers",
+        )
 
-    if isinstance(config, PrepareOnlineConfig):
-        if requested_transfers:
-            _fail(
-                "PREPARE_TRANSFER_UNSUPPORTED",
-                "prepare-online does not accept run-artifact transfers",
-            )
-        return config
 
-    missing = _first_missing(config.required_resource_ids, available_resource_ids)
-    if isinstance(config, LocalOfflineConfig):
-        if requested_transfers:
-            _fail(
-                "OFFLINE_TRANSFER_FORBIDDEN",
-                "local-offline does not permit artifact transfer",
-            )
-        if missing is not None:
-            _fail(
-                "OFFLINE_RESOURCE_MISSING",
-                f"required manifested resource is missing: {missing}",
-            )
-        return config
+def _validate_local_preflight(
+    missing: str | None,
+    requested_transfers: tuple[ArtifactTransfer, ...],
+) -> None:
+    if requested_transfers:
+        _fail(
+            "OFFLINE_TRANSFER_FORBIDDEN",
+            "local-offline does not permit artifact transfer",
+        )
+    if missing is not None:
+        _fail(
+            "OFFLINE_RESOURCE_MISSING",
+            f"required manifested resource is missing: {missing}",
+        )
 
+
+def _validate_private_preflight(
+    config: PrivateModalConfig,
+    missing: str | None,
+    requested_transfers: tuple[ArtifactTransfer, ...],
+) -> None:
     if not config.workload_egress_verified:
         _fail("MODAL_EGRESS_UNVERIFIED", "private Modal no-egress setting is unverified")
     if missing is not None:
@@ -251,6 +250,25 @@ def preflight_execution[ConfigT: (PrepareOnlineConfig, LocalOfflineConfig, Priva
                 "MODAL_TRANSFER_NOT_ALLOWLISTED",
                 "private Modal transfer is not exactly allowlisted",
             )
+
+
+def preflight_execution[ConfigT: (PrepareOnlineConfig, LocalOfflineConfig, PrivateModalConfig)](
+    config: ConfigT,
+    *,
+    available_resource_ids: tuple[str, ...],
+    requested_transfers: tuple[ArtifactTransfer, ...] = (),
+) -> ConfigT:
+    """Validate only local policy state; this function cannot submit a workload."""
+
+    if isinstance(config, PrepareOnlineConfig):
+        _validate_prepare_transfers(requested_transfers)
+        return config
+
+    missing = _first_missing(config.required_resource_ids, available_resource_ids)
+    if isinstance(config, LocalOfflineConfig):
+        _validate_local_preflight(missing, requested_transfers)
+    else:
+        _validate_private_preflight(config, missing, requested_transfers)
     return config
 
 

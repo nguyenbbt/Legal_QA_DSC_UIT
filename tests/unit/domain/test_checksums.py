@@ -15,7 +15,14 @@ from legal_rag.domain.checksums import (
     checksum_bytes,
     checksum_file,
     checksum_file_set,
+    content_json_bytes,
 )
+
+
+def test_content_json_allows_legal_text_that_resembles_dynamic_metadata() -> None:
+    assert content_json_bytes({"text": "/private/path", "citation": "2026-01-01T00:00:00"}) == (
+        b'{"citation":"2026-01-01T00:00:00","text":"/private/path"}\n'
+    )
 
 
 def test_canonical_json_has_exact_nfc_compact_utf8_bytes_and_one_lf() -> None:

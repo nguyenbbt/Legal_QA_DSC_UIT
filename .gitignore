@@ -234,6 +234,9 @@ tempCodeRunnerFile.py
 !/artifacts/reports/mil-001/
 !/artifacts/reports/mil-001/*.md
 !/artifacts/reports/mil-001/*.json
+!/artifacts/reports/mil-002/
+!/artifacts/reports/mil-002/*.md
+!/artifacts/reports/mil-002/*.json
 /artifacts/operational/
 
 # Marimo

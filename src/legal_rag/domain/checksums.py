@@ -94,42 +94,50 @@ def _looks_absolute_path(value: str) -> bool:
     return value.startswith(("/", "\\")) or _WINDOWS_ABSOLUTE.match(value) is not None
 
 
+def _canonical_string(value: str) -> str:
+    normalized = unicodedata.normalize("NFC", value)
+    if "\x00" in normalized:
+        _fail("RUN_CANONICAL_STRING_UNSUPPORTED", "canonical strings must not contain NUL")
+    if _looks_absolute_path(normalized):
+        _fail(
+            "RUN_CANONICAL_ABSOLUTE_PATH",
+            "absolute paths are forbidden in deterministic JSON",
+        )
+    if _UUID_TEXT.fullmatch(normalized) is not None:
+        _fail("RUN_CANONICAL_UUID_FORBIDDEN", "UUIDs are forbidden in deterministic JSON")
+    if _TIMESTAMP_TEXT.match(normalized) is not None:
+        _fail(
+            "RUN_CANONICAL_TIMESTAMP_FORBIDDEN",
+            "timestamps are forbidden in deterministic JSON",
+        )
+    return normalized
+
+
+def _canonical_mapping(value: Mapping[object, object]) -> dict[str, Any]:
+    normalized_members: list[tuple[str, Any]] = []
+    for member_key, member_value in value.items():
+        if not isinstance(member_key, str) or _STATIC_KEY.fullmatch(member_key) is None:
+            _fail(
+                "RUN_CANONICAL_KEY_UNSUPPORTED",
+                "deterministic JSON keys must be static ASCII snake-case names",
+            )
+        if member_key in _FORBIDDEN_FIELDS:
+            _fail(
+                "RUN_CANONICAL_FIELD_FORBIDDEN",
+                "operational fields are forbidden in deterministic JSON",
+            )
+        normalized_members.append((member_key, _canonical_value(member_value)))
+    normalized_members.sort(key=lambda item: item[0].encode("utf-8"))
+    return dict(normalized_members)
+
+
 def _canonical_value(value: object) -> Any:
     if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, str):
-        normalized = unicodedata.normalize("NFC", value)
-        if "\x00" in normalized:
-            _fail("RUN_CANONICAL_STRING_UNSUPPORTED", "canonical strings must not contain NUL")
-        if _looks_absolute_path(normalized):
-            _fail(
-                "RUN_CANONICAL_ABSOLUTE_PATH",
-                "absolute paths are forbidden in deterministic JSON",
-            )
-        if _UUID_TEXT.fullmatch(normalized) is not None:
-            _fail("RUN_CANONICAL_UUID_FORBIDDEN", "UUIDs are forbidden in deterministic JSON")
-        if _TIMESTAMP_TEXT.match(normalized) is not None:
-            _fail(
-                "RUN_CANONICAL_TIMESTAMP_FORBIDDEN",
-                "timestamps are forbidden in deterministic JSON",
-            )
-        return normalized
+        return _canonical_string(value)
     if isinstance(value, Mapping):
-        normalized_members: list[tuple[str, Any]] = []
-        for member_key, member_value in value.items():
-            if not isinstance(member_key, str) or _STATIC_KEY.fullmatch(member_key) is None:
-                _fail(
-                    "RUN_CANONICAL_KEY_UNSUPPORTED",
-                    "deterministic JSON keys must be static ASCII snake-case names",
-                )
-            if member_key in _FORBIDDEN_FIELDS:
-                _fail(
-                    "RUN_CANONICAL_FIELD_FORBIDDEN",
-                    "operational fields are forbidden in deterministic JSON",
-                )
-            normalized_members.append((member_key, _canonical_value(member_value)))
-        normalized_members.sort(key=lambda item: item[0].encode("utf-8"))
-        return dict(normalized_members)
+        return _canonical_mapping(value)
     if isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, memoryview)):
         return [_canonical_value(member) for member in value]
     _fail(
@@ -149,6 +157,21 @@ def canonical_json_bytes(value: object) -> bytes:
         separators=(",", ":"),
     ).encode("utf-8")
     return encoded + b"\n"
+
+
+def content_json_bytes(value: object) -> bytes:
+    """Serialize typed corpus content without applying run-metadata string bans."""
+
+    return (
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "\n"
+    ).encode("utf-8")
 
 
 def checksum_bytes(data: bytes) -> str:

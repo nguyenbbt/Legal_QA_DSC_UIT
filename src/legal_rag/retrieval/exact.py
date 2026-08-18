@@ -16,6 +16,8 @@ from legal_rag.domain.models import (
     FrozenStrictModel,
     NfcString,
     NonNegativeInt,
+    SafeRelativePath,
+    Sha256,
 )
 from legal_rag.domain.validation import RecordValidationError, parse_record_json
 from legal_rag.ingestion.chunking import ChunkRecord
@@ -125,6 +127,21 @@ class AliasIndex:
         return checksum_bytes(self.manifest_bytes())
 
 
+class AliasManifestFile(FrozenStrictModel, frozen=True):
+    path: SafeRelativePath
+    checksum: Sha256
+
+
+class AliasManifest(FrozenStrictModel, frozen=True):
+    schema_version: Literal["legal.reference.alias.manifest.v1"]
+    document_key_version: Literal["legal-document-number-key.v1"]
+    unicode_version: NfcString
+    corpus_checksum: Sha256
+    ordered_files: tuple[AliasManifestFile, ...]
+    record_count: NonNegativeInt
+    aggregate_checksum: Sha256
+
+
 def _alias_error(code: str, message: str, artifact_path: str) -> AliasArtifactError:
     return AliasArtifactError(code, message, artifact_path=artifact_path)
 
@@ -156,30 +173,13 @@ def _validate_alias_context(
         )
 
 
-def load_alias_artifact(
-    data: bytes,
-    *,
-    contexts: tuple[ContextRecord, ...],
-    corpus_checksum: str,
-    artifact_path: str,
-) -> AliasIndex:
-    """Validate an approved alias JSONL artifact without deriving live aliases."""
-
+def _parse_alias_records(data: bytes, artifact_path: str) -> tuple[LegalReferenceAlias, ...]:
     if data.startswith(b"\xef\xbb\xbf") or b"\r" in data or not data.endswith(b"\n"):
         raise _alias_error(
             "ALIAS_ENCODING_INVALID",
             "alias JSONL must be UTF-8 without BOM and end with LF",
             artifact_path,
         )
-    contexts_by_id: dict[str, ContextRecord] = {}
-    for context in contexts:
-        if context.context_id in contexts_by_id:
-            raise _alias_error(
-                "ALIAS_CONTEXT_DUPLICATE",
-                "active corpus contains a duplicate context ID",
-                artifact_path,
-            )
-        contexts_by_id[context.context_id] = context
     records: list[LegalReferenceAlias] = []
     for line_number, line in enumerate(data.splitlines(), start=1):
         if not line:
@@ -198,7 +198,6 @@ def load_alias_artifact(
         except RecordValidationError as error:
             message = error.issues[0].message if error.issues else "alias schema is invalid"
             raise _alias_error("ALIAS_SCHEMA_INVALID", message, artifact_path) from error
-        _validate_alias_context(record, contexts_by_id, artifact_path)
         records.append(record)
     order = lambda record: (  # noqa: E731 - local exact contract key
         record.document_number_key.encode("utf-8"),
@@ -217,11 +216,79 @@ def load_alias_artifact(
             "alias artifact contains an identical duplicate record",
             artifact_path,
         )
+    return tuple(records)
+
+
+def load_alias_artifact(
+    data: bytes,
+    *,
+    contexts: tuple[ContextRecord, ...],
+    corpus_checksum: str,
+    artifact_path: str,
+) -> AliasIndex:
+    """Validate an approved alias JSONL artifact without deriving live aliases."""
+
+    records = _parse_alias_records(data, artifact_path)
+    contexts_by_id: dict[str, ContextRecord] = {}
+    for context in contexts:
+        if context.context_id in contexts_by_id:
+            raise _alias_error(
+                "ALIAS_CONTEXT_DUPLICATE",
+                "active corpus contains a duplicate context ID",
+                artifact_path,
+            )
+        contexts_by_id[context.context_id] = context
+    for record in records:
+        _validate_alias_context(record, contexts_by_id, artifact_path)
     return AliasIndex(
-        records=tuple(records),
+        records=records,
         corpus_checksum=corpus_checksum,
         artifact_path=artifact_path,
         artifact_checksum=checksum_bytes(data),
+    )
+
+
+def load_frozen_alias_artifact(
+    data: bytes,
+    *,
+    manifest_data: bytes,
+    corpus_checksum: str,
+    artifact_path: str,
+) -> AliasIndex:
+    """Load a provenance-validated alias freeze through its immutable manifest."""
+
+    records = _parse_alias_records(data, artifact_path)
+    try:
+        manifest = parse_record_json(
+            manifest_data,
+            AliasManifest,
+            artifact_path="aliases.active.manifest.json",
+            record_identity="manifest",
+        )
+    except RecordValidationError as error:
+        message = error.issues[0].message if error.issues else "alias manifest is invalid"
+        raise _alias_error("ALIAS_MANIFEST_INVALID", message, artifact_path) from error
+    artifact_checksum = checksum_bytes(data)
+    if (
+        manifest.corpus_checksum != corpus_checksum
+        or manifest.document_key_version != DOCUMENT_KEY_VERSION
+        or manifest.unicode_version != unicodedata.unidata_version
+        or len(manifest.ordered_files) != 1
+        or manifest.ordered_files[0].path != artifact_path
+        or manifest.ordered_files[0].checksum != artifact_checksum
+        or manifest.aggregate_checksum != artifact_checksum
+        or manifest.record_count != len(records)
+    ):
+        raise _alias_error(
+            "ALIAS_MANIFEST_MISMATCH",
+            "alias checksum or identity differs from its active manifest",
+            artifact_path,
+        )
+    return AliasIndex(
+        records=records,
+        corpus_checksum=corpus_checksum,
+        artifact_path=artifact_path,
+        artifact_checksum=artifact_checksum,
     )
 
 

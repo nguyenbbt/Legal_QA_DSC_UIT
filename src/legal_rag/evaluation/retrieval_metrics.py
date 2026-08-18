@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 
 
@@ -37,6 +38,25 @@ class RetrievalMetricReport:
     recall_at_10: float
     mrr_at_10: float
     evidence_set_recall_at_10: float
+
+
+@dataclass(frozen=True, slots=True)
+class ContainmentInputRow:
+    question_id: str
+    gold_answer: str
+    retrieved_display_texts: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ContainmentMetricReport:
+    metric_namespace: str
+    total_question_count: int
+    eligible_question_count: int
+    excluded_question_count: int
+    excluded: tuple[tuple[str, str], ...]
+    containment_at_1: float
+    containment_at_5: float
+    containment_at_10: float
 
 
 def _ordered_rows(rows: tuple[RetrievalLabelRow, ...]) -> tuple[RetrievalLabelRow, ...]:
@@ -129,4 +149,49 @@ def evaluate_retrieval(
         recall_at_10=recall_10 / denominator,
         mrr_at_10=reciprocal_ranks / denominator,
         evidence_set_recall_at_10=evidence_set_hits / denominator,
+    )
+
+
+def _containment_view(value: str) -> str:
+    return " ".join(unicodedata.normalize("NFC", value).casefold().split())
+
+
+def evaluate_answer_containment(
+    rows: tuple[ContainmentInputRow, ...],
+) -> ContainmentMetricReport:
+    """Report answer substring containment without treating it as relevance gold."""
+
+    ordered = tuple(sorted(rows, key=lambda row: row.question_id.encode("utf-8")))
+    ids = tuple(row.question_id for row in ordered)
+    if any(not question_id for question_id in ids) or len(ids) != len(set(ids)):
+        raise RetrievalEvaluationError(
+            "CONTAINMENT_ID_INVALID", "containment question IDs must be non-empty and unique"
+        )
+    eligible: list[tuple[str, tuple[str, ...]]] = []
+    excluded: list[tuple[str, str]] = []
+    for row in ordered:
+        answer = _containment_view(row.gold_answer)
+        if not answer:
+            excluded.append((row.question_id, "EMPTY_GOLD_ANSWER"))
+            continue
+        displays = tuple(_containment_view(text) for text in row.retrieved_display_texts)
+        eligible.append((answer, displays))
+
+    def rate(k: int) -> float:
+        if not eligible:
+            return 0.0
+        hits = sum(
+            any(answer in display for display in displays[:k]) for answer, displays in eligible
+        )
+        return float(hits) / float(len(eligible))
+
+    return ContainmentMetricReport(
+        metric_namespace="diagnostic_answer_containment",
+        total_question_count=len(ordered),
+        eligible_question_count=len(eligible),
+        excluded_question_count=len(excluded),
+        excluded=tuple(excluded),
+        containment_at_1=rate(1),
+        containment_at_5=rate(5),
+        containment_at_10=rate(10),
     )

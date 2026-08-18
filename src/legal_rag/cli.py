@@ -158,6 +158,52 @@ def _build_parser() -> argparse.ArgumentParser:
     alias_propose.add_argument("--context-manifest", required=True, type=Path)
     alias_propose.add_argument("--output", required=True, type=Path)
     alias_propose.add_argument("--report", required=True, type=Path)
+    alias_freeze = alias_commands.add_parser(
+        "freeze", help="activate one checksum-approved alias proposal set", allow_abbrev=False
+    )
+    alias_freeze.add_argument("--contexts", required=True, type=Path)
+    alias_freeze.add_argument("--proposals", required=True, type=Path)
+    alias_freeze.add_argument("--proposal-report", required=True, type=Path)
+    alias_freeze.add_argument("--expected-proposals-checksum", required=True)
+    alias_freeze.add_argument("--expected-proposal-count", required=True, type=int)
+    alias_freeze.add_argument("--output", required=True, type=Path)
+    alias_freeze.add_argument("--manifest", required=True, type=Path)
+    alias_freeze.add_argument("--report", required=True, type=Path)
+
+    index = commands.add_parser(
+        "index", help="build deterministic local retrieval indices", allow_abbrev=False
+    )
+    index_commands = index.add_subparsers(dest="index_command", required=True)
+    index_build = index_commands.add_parser(
+        "build", help="build the checksum-bound bm25.v1 disk index", allow_abbrev=False
+    )
+    index_build.add_argument("--chunks", required=True, type=Path)
+    index_build.add_argument("--chunk-manifest", required=True, type=Path)
+    index_build.add_argument("--aliases", required=True, type=Path)
+    index_build.add_argument("--alias-manifest", required=True, type=Path)
+    index_build.add_argument("--database", required=True, type=Path)
+    index_build.add_argument("--manifest", required=True, type=Path)
+
+    retrieval = commands.add_parser(
+        "retrieval", help="run local exact/BM25 retrieval baselines", allow_abbrev=False
+    )
+    retrieval_commands = retrieval.add_subparsers(dest="retrieval_command", required=True)
+    retrieval_run = retrieval_commands.add_parser(
+        "run",
+        help="retrieve all development questions and build the annotation queue",
+        allow_abbrev=False,
+    )
+    retrieval_run.add_argument("--questions", required=True, type=Path)
+    retrieval_run.add_argument("--split-manifest", required=True, type=Path)
+    retrieval_run.add_argument("--grounding-sample", required=True, type=Path)
+    retrieval_run.add_argument("--chunks", required=True, type=Path)
+    retrieval_run.add_argument("--aliases", required=True, type=Path)
+    retrieval_run.add_argument("--alias-manifest", required=True, type=Path)
+    retrieval_run.add_argument("--index-database", required=True, type=Path)
+    retrieval_run.add_argument("--index-manifest", required=True, type=Path)
+    retrieval_run.add_argument("--output", required=True, type=Path)
+    retrieval_run.add_argument("--annotation-queue", required=True, type=Path)
+    retrieval_run.add_argument("--report", required=True, type=Path)
 
     grounding = commands.add_parser(
         "grounding", help="manage private grounding contracts", allow_abbrev=False
@@ -528,30 +574,175 @@ def _run_corpus(arguments: argparse.Namespace) -> dict[str, str]:
 
 def _run_aliases(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.domain.artifacts import ImmutableArtifactError
-    from legal_rag.ingestion.aliases import AliasProposalError, write_alias_proposals
+    from legal_rag.ingestion.aliases import (
+        AliasProposalError,
+        freeze_alias_proposals,
+        write_alias_proposals,
+    )
     from legal_rag.ingestion.corpus import CorpusBuildError, corpus_checksum_from_import_manifest
 
-    if arguments.aliases_command != "propose":
-        raise CliError("ALIAS_COMMAND_INVALID", "alias command is invalid", exit_code=2)
-    manifest_bytes = _read_bytes(
-        arguments.context_manifest,
-        code="CORPUS_IMPORT_MANIFEST_INVALID",
-        message="context import manifest is unavailable",
+    try:
+        if arguments.aliases_command == "propose":
+            manifest_bytes = _read_bytes(
+                arguments.context_manifest,
+                code="CORPUS_IMPORT_MANIFEST_INVALID",
+                message="context import manifest is unavailable",
+                exit_code=2,
+            )
+            summary = write_alias_proposals(
+                contexts_path=arguments.contexts,
+                proposals_path=arguments.output,
+                report_path=arguments.report,
+                corpus_checksum=corpus_checksum_from_import_manifest(manifest_bytes),
+            )
+            return {
+                "summary": (
+                    f"ALIAS PROPOSAL COMPLETE contexts={summary.context_count} "
+                    f"proposals={summary.proposal_count} {summary.proposals_checksum}"
+                )
+            }
+        if arguments.aliases_command == "freeze":
+            frozen = freeze_alias_proposals(
+                contexts_path=arguments.contexts,
+                proposals_path=arguments.proposals,
+                proposal_report_path=arguments.proposal_report,
+                aliases_path=arguments.output,
+                manifest_path=arguments.manifest,
+                report_path=arguments.report,
+                expected_proposals_checksum=arguments.expected_proposals_checksum,
+                expected_proposal_count=arguments.expected_proposal_count,
+            )
+            return {
+                "summary": (
+                    f"ALIAS FREEZE COMPLETE aliases={frozen.alias_count} {frozen.aliases_checksum}"
+                )
+            }
+    except (AliasProposalError, CorpusBuildError, ImmutableArtifactError) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    raise CliError("ALIAS_COMMAND_INVALID", "alias command is invalid", exit_code=2)
+
+
+def _run_index(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError
+    from legal_rag.retrieval.bm25 import APPROVED_BM25_RUNTIME_ID
+    from legal_rag.retrieval.disk_bm25 import DiskBm25Error, build_disk_bm25_from_manifests
+
+    if arguments.index_command != "build":
+        raise CliError("INDEX_COMMAND_INVALID", "index command is invalid", exit_code=2)
+    chunk_manifest_data = _read_bytes(
+        arguments.chunk_manifest,
+        code="SPARSE_INDEX_MANIFEST_INVALID",
+        message="chunk manifest is unavailable",
+        exit_code=2,
+    )
+    alias_manifest_data = _read_bytes(
+        arguments.alias_manifest,
+        code="SPARSE_INDEX_MANIFEST_INVALID",
+        message="alias manifest is unavailable",
         exit_code=2,
     )
     try:
-        summary = write_alias_proposals(
-            contexts_path=arguments.contexts,
-            proposals_path=arguments.output,
-            report_path=arguments.report,
-            corpus_checksum=corpus_checksum_from_import_manifest(manifest_bytes),
+        summary = build_disk_bm25_from_manifests(
+            chunks_path=arguments.chunks,
+            chunk_manifest_data=chunk_manifest_data,
+            aliases_path=arguments.aliases,
+            alias_manifest_data=alias_manifest_data,
+            database_path=arguments.database,
+            manifest_path=arguments.manifest,
+            runtime_compatibility_id=APPROVED_BM25_RUNTIME_ID,
         )
-    except (AliasProposalError, CorpusBuildError, ImmutableArtifactError) as error:
+    except (DiskBm25Error, ImmutableArtifactError) as error:
         raise CliError(error.code, error.message, exit_code=2) from error
     return {
         "summary": (
-            f"ALIAS PROPOSAL COMPLETE contexts={summary.context_count} "
-            f"proposals={summary.proposal_count} {summary.proposals_checksum}"
+            f"INDEX BUILD COMPLETE documents={summary.document_count} {summary.index_checksum}"
+        )
+    }
+
+
+def _run_retrieval(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.domain.checksums import checksum_bytes
+    from legal_rag.evaluation.real_retrieval import RealRetrievalError, run_development_retrieval
+    from legal_rag.retrieval.disk_bm25 import DiskBm25Error, open_disk_bm25_index
+    from legal_rag.retrieval.exact import AliasArtifactError, load_frozen_alias_artifact
+
+    if arguments.retrieval_command != "run":
+        raise CliError("RETRIEVAL_COMMAND_INVALID", "retrieval command is invalid", exit_code=2)
+    inputs = {
+        "questions": _read_bytes(
+            arguments.questions,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="question artifact is unavailable",
+            exit_code=2,
+        ),
+        "split": _read_bytes(
+            arguments.split_manifest,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="split manifest is unavailable",
+            exit_code=2,
+        ),
+        "sample": _read_bytes(
+            arguments.grounding_sample,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="grounding sample is unavailable",
+            exit_code=2,
+        ),
+        "aliases": _read_bytes(
+            arguments.aliases,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="active aliases are unavailable",
+            exit_code=2,
+        ),
+        "alias_manifest": _read_bytes(
+            arguments.alias_manifest,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="alias manifest is unavailable",
+            exit_code=2,
+        ),
+        "index_manifest": _read_bytes(
+            arguments.index_manifest,
+            code="RETRIEVAL_INPUT_INVALID",
+            message="index manifest is unavailable",
+            exit_code=2,
+        ),
+    }
+    try:
+        with open_disk_bm25_index(
+            database_path=arguments.index_database,
+            chunks_path=arguments.chunks,
+            manifest_data=inputs["index_manifest"],
+        ) as index:
+            aliases = load_frozen_alias_artifact(
+                inputs["aliases"],
+                manifest_data=inputs["alias_manifest"],
+                corpus_checksum=index.manifest.corpus_checksum,
+                artifact_path=arguments.aliases.name,
+            )
+            artifacts = run_development_retrieval(
+                question_data=inputs["questions"],
+                split_manifest_data=inputs["split"],
+                grounding_sample_data=inputs["sample"],
+                index=index,
+                aliases=aliases,
+                index_checksum=index.index_checksum,
+                chunks_checksum=index.manifest.chunks_artifact_checksum,
+                alias_manifest_checksum=checksum_bytes(inputs["alias_manifest"]),
+            )
+        output_checksum = write_immutable_bytes(arguments.output, artifacts.retrieval_output)
+        write_immutable_bytes(arguments.annotation_queue, artifacts.annotation_queue)
+        write_immutable_bytes(arguments.report, artifacts.report)
+    except (
+        AliasArtifactError,
+        DiskBm25Error,
+        ImmutableArtifactError,
+        RealRetrievalError,
+    ) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    return {
+        "summary": (
+            f"RETRIEVAL COMPLETE questions={len(artifacts.retrieval_output.splitlines())} "
+            f"{output_checksum}"
         )
     }
 
@@ -880,6 +1071,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "doctor": _run_doctor,
             "evaluate": _run_evaluate,
             "grounding": _run_grounding,
+            "index": _run_index,
+            "retrieval": _run_retrieval,
             "organizer": _run_organizer,
             "pipeline": _run_pipeline,
             "scorer": _run_scorer,

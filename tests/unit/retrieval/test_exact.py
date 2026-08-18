@@ -11,6 +11,7 @@ from legal_rag.retrieval.exact import (
     AliasArtifactError,
     document_number_key,
     load_alias_artifact,
+    load_frozen_alias_artifact,
     parse_legal_reference,
     resolve_exact_reference,
 )
@@ -101,6 +102,35 @@ def test_alias_artifact_is_closed_ordered_and_bound_to_context() -> None:
     assert index.context_ids_for("08/2022/nq-hdnd") == ("740",)
     assert index.corpus_checksum == corpus_checksum
     assert index.manifest_bytes() == index.manifest_bytes()
+
+
+def test_frozen_alias_loader_requires_the_checksum_linked_active_manifest() -> None:
+    data = alias_bytes()
+    corpus_checksum = checksum_bytes(b"synthetic-corpus")
+    validated = load_alias_artifact(
+        data,
+        contexts=(context_record("Điều 1. Nội dung."),),
+        corpus_checksum=corpus_checksum,
+        artifact_path="aliases.active.v1.jsonl",
+    )
+
+    frozen = load_frozen_alias_artifact(
+        data,
+        manifest_data=validated.manifest_bytes(),
+        corpus_checksum=corpus_checksum,
+        artifact_path="aliases.active.v1.jsonl",
+    )
+
+    assert frozen == validated
+
+    with pytest.raises(AliasArtifactError, match="checksum") as changed:
+        load_frozen_alias_artifact(
+            data[:-1] + b" \n",
+            manifest_data=validated.manifest_bytes(),
+            corpus_checksum=corpus_checksum,
+            artifact_path="aliases.active.v1.jsonl",
+        )
+    assert changed.value.code == "ALIAS_MANIFEST_MISMATCH"
 
 
 def test_alias_artifact_rejects_bad_key_and_unknown_field() -> None:

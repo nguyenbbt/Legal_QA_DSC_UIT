@@ -3,9 +3,11 @@ from __future__ import annotations
 import pytest
 
 from legal_rag.evaluation.retrieval_metrics import (
+    ContainmentInputRow,
     RetrievalEvaluationError,
     RetrievalLabelRow,
     RetrievalOutputRow,
+    evaluate_answer_containment,
     evaluate_retrieval,
 )
 
@@ -55,3 +57,21 @@ def test_retrieval_metrics_reject_duplicate_ranked_evidence() -> None:
             (RetrievalOutputRow("q", ("a", "a")),),
         )
     assert duplicate.value.code == "RETRIEVAL_OUTPUT_DUPLICATE"
+
+
+def test_answer_containment_is_separate_and_reports_all_denominators() -> None:
+    report = evaluate_answer_containment(
+        (
+            ContainmentInputRow("q1", "Nội   dung", ("không khớp", "NỘI DUNG")),
+            ContainmentInputRow("q2", "", ("bất kỳ",)),
+        )
+    )
+
+    assert report.metric_namespace == "diagnostic_answer_containment"
+    assert report.total_question_count == 2
+    assert report.eligible_question_count == 1
+    assert report.excluded_question_count == 1
+    assert report.excluded == (("q2", "EMPTY_GOLD_ANSWER"),)
+    assert report.containment_at_1 == 0.0
+    assert report.containment_at_5 == 1.0
+    assert report.containment_at_10 == 1.0

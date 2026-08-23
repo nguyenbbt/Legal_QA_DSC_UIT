@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
+from typing import Literal
 
 
 class RetrievalEvaluationError(Exception):
@@ -28,11 +29,18 @@ class RetrievalOutputRow:
 
 
 @dataclass(frozen=True, slots=True)
+class UnevaluableRetrievalQuestion:
+    question_id: str
+    reason: Literal["NO_RELEVANT_EVIDENCE"]
+
+
+@dataclass(frozen=True, slots=True)
 class RetrievalMetricReport:
     benchmark_question_count: int
     retrieval_evaluable_count: int
     retrieval_unevaluable_count: int
     unevaluable_question_ids: tuple[str, ...]
+    unevaluable: tuple[UnevaluableRetrievalQuestion, ...]
     recall_at_1: float
     recall_at_5: float
     recall_at_10: float
@@ -144,6 +152,10 @@ def evaluate_retrieval(
         retrieval_evaluable_count=len(evaluable),
         retrieval_unevaluable_count=len(unevaluable),
         unevaluable_question_ids=unevaluable,
+        unevaluable=tuple(
+            UnevaluableRetrievalQuestion(question_id, "NO_RELEVANT_EVIDENCE")
+            for question_id in unevaluable
+        ),
         recall_at_1=recall_1 / denominator,
         recall_at_5=recall_5 / denominator,
         recall_at_10=recall_10 / denominator,

@@ -215,6 +215,14 @@ def _build_parser() -> argparse.ArgumentParser:
     grounding_sample.add_argument("--questions", required=True, type=Path)
     grounding_sample.add_argument("--split-manifest", required=True, type=Path)
     grounding_sample.add_argument("--output", required=True, type=Path)
+    grounding_validate = grounding_commands.add_parser(
+        "validate",
+        help="validate one owner-approved grounding benchmark",
+        allow_abbrev=False,
+    )
+    grounding_validate.add_argument("--manifest", required=True, type=Path)
+    grounding_validate.add_argument("--benchmark", required=True, type=Path)
+    grounding_validate.add_argument("--output", required=True, type=Path)
 
     baseline = commands.add_parser(
         "baseline", help="build the corpus-free MIL-003 baseline", allow_abbrev=False
@@ -244,6 +252,16 @@ def _build_parser() -> argparse.ArgumentParser:
         "--scorer-root", type=Path, default=Path("Scoring-Program-Task-LegalQA")
     )
     evaluate_competition.add_argument("--nltk-data", type=Path, default=Path("resources/nltk_data"))
+    evaluate_retrieval = evaluate_commands.add_parser(
+        "retrieval",
+        help="evaluate fixed retrieval output against approved private labels",
+        allow_abbrev=False,
+    )
+    evaluate_retrieval.add_argument("--retrieval-output", required=True, type=Path)
+    evaluate_retrieval.add_argument("--annotation-queue", required=True, type=Path)
+    evaluate_retrieval.add_argument("--grounding-manifest", required=True, type=Path)
+    evaluate_retrieval.add_argument("--grounding-benchmark", required=True, type=Path)
+    evaluate_retrieval.add_argument("--report", required=True, type=Path)
 
     benchmark = commands.add_parser(
         "benchmark", help="record local operational measurements", allow_abbrev=False
@@ -747,6 +765,41 @@ def _run_retrieval(arguments: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _run_grounding_validation(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.grounding.validation import (
+        GroundingValidationError,
+        validate_grounding_assessments,
+    )
+
+    manifest_data = _read_bytes(
+        arguments.manifest,
+        code="GROUNDING_LABEL_SOURCE_INVALID",
+        message="grounding benchmark manifest is unavailable",
+        exit_code=2,
+    )
+    benchmark_data = _read_bytes(
+        arguments.benchmark,
+        code="GROUNDING_LABEL_SOURCE_INVALID",
+        message="grounding benchmark is unavailable",
+        exit_code=2,
+    )
+    try:
+        report = validate_grounding_assessments(
+            manifest_data=manifest_data,
+            benchmark_data=benchmark_data,
+        )
+        report_checksum = write_immutable_bytes(arguments.output, report.json_bytes())
+    except (GroundingValidationError, ImmutableArtifactError) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    return {
+        "summary": (
+            "GROUNDING VALIDATION COMPLETE "
+            f"questions={report.benchmark_question_count} {report_checksum}"
+        )
+    }
+
+
 def _run_grounding(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.domain.checksums import checksum_bytes
     from legal_rag.evaluation.grounding import (
@@ -761,6 +814,8 @@ def _run_grounding(arguments: argparse.Namespace) -> dict[str, str]:
         load_split_questions_jsonl,
     )
 
+    if arguments.grounding_command == "validate":
+        return _run_grounding_validation(arguments)
     if arguments.grounding_command != "sample":
         raise CliError("GROUNDING_COMMAND_INVALID", "grounding command is invalid", exit_code=2)
     question_bytes = _read_bytes(
@@ -914,6 +969,44 @@ def _run_baseline(arguments: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _run_retrieval_evaluation(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.evaluation.retrieval_evaluation import (
+        LabeledRetrievalError,
+        evaluate_labeled_retrieval,
+    )
+
+    paths = {
+        "retrieval_output_data": arguments.retrieval_output,
+        "annotation_queue_data": arguments.annotation_queue,
+        "benchmark_manifest_data": arguments.grounding_manifest,
+        "benchmark_data": arguments.grounding_benchmark,
+    }
+    inputs = {
+        name: _read_bytes(
+            path,
+            code="RETRIEVAL_EVAL_INPUT_INVALID",
+            message="retrieval evaluation input is unavailable",
+            exit_code=2,
+        )
+        for name, path in paths.items()
+    }
+    try:
+        rendered = evaluate_labeled_retrieval(**inputs)
+        report_checksum = write_immutable_bytes(arguments.report, rendered)
+    except (LabeledRetrievalError, ImmutableArtifactError) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    report = json.loads(rendered)
+    metrics = report["metrics"]
+    return {
+        "summary": (
+            "RETRIEVAL EVALUATION COMPLETE "
+            f"benchmark={metrics['benchmark_question_count']} "
+            f"evaluable={metrics['retrieval_evaluable_count']} {report_checksum}"
+        )
+    }
+
+
 def _run_evaluate(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.evaluation.competition import (
         CompetitionEvaluationError,
@@ -922,6 +1015,8 @@ def _run_evaluate(arguments: argparse.Namespace) -> dict[str, str]:
     )
     from legal_rag.evaluation.official_exact import ScorerError
 
+    if arguments.evaluate_command == "retrieval":
+        return _run_retrieval_evaluation(arguments)
     if arguments.evaluate_command != "competition" or arguments.mode != "official_exact":
         raise CliError("EVAL_COMMAND_INVALID", "evaluation command is invalid", exit_code=2)
     predictions = _read_bytes(

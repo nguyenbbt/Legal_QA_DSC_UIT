@@ -30,6 +30,9 @@ def test_retrieval_metrics_match_hand_computed_multi_evidence_fixture() -> None:
     assert report.retrieval_evaluable_count == 2
     assert report.retrieval_unevaluable_count == 1
     assert report.unevaluable_question_ids == ("q3",)
+    assert tuple((row.question_id, row.reason) for row in report.unevaluable) == (
+        ("q3", "NO_RELEVANT_EVIDENCE"),
+    )
     assert report.recall_at_1 == 0.25
     assert report.recall_at_5 == 1.0
     assert report.recall_at_10 == 1.0

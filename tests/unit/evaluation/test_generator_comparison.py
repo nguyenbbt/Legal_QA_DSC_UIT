@@ -7,6 +7,7 @@ import pytest
 from legal_rag.evaluation.generator_comparison import (
     GeneratorComparisonError,
     compare_generator_experiments,
+    compare_retrieval_generation_experiments,
 )
 
 
@@ -96,3 +97,77 @@ def test_comparison_rejects_a_non_fixed_generator_axis() -> None:
         )
 
     assert caught.value.code == "GENERATOR_COMPARISON_NOT_FIXED"
+
+
+def test_retrieval_generation_comparison_keeps_generator_fixed() -> None:
+    baseline_manifest = json.loads(_manifest(run_id="G1", baseline_run_id=None, adapter=False))
+    candidate_manifest = json.loads(_manifest(run_id="G1R2", baseline_run_id="G1", adapter=False))
+    candidate_manifest["retrieval_output_checksum"] = "sha256:" + "f" * 64
+    candidate_manifest["comparison"]["changed_axes"] = ["retrieval"]
+    metrics = _jsonl(
+        [
+            {"question_id": "q1", "meteor": 0.3, "rouge_l": 0.4},
+            {"question_id": "q2", "meteor": 0.2, "rouge_l": 0.3},
+        ]
+    )
+
+    result = compare_retrieval_generation_experiments(
+        baseline_per_query_data=metrics,
+        candidate_per_query_data=metrics,
+        baseline_manifest_data=json.dumps(baseline_manifest).encode(),
+        candidate_manifest_data=json.dumps(candidate_manifest).encode(),
+        baseline_runtime_seconds=10.0,
+        candidate_runtime_seconds=10.0,
+    )
+
+    value = json.loads(result)
+    assert value["schema_version"] == "generator.retrieval.comparison.v1"
+    assert value["classification"] == "retrieval_only_single_axis"
+    assert value["changed_axes"] == ["retrieval"]
+    assert value["fixed_inputs_verified"] is True
+
+
+def test_retrieval_generation_comparison_rejects_changed_prompt() -> None:
+    baseline_manifest = json.loads(_manifest(run_id="G1", baseline_run_id=None, adapter=False))
+    candidate_manifest = json.loads(_manifest(run_id="G1R2", baseline_run_id="G1", adapter=False))
+    candidate_manifest["retrieval_output_checksum"] = "sha256:" + "f" * 64
+    candidate_manifest["prompt_checksum"] = "sha256:" + "9" * 64
+    candidate_manifest["comparison"]["changed_axes"] = ["retrieval"]
+
+    with pytest.raises(GeneratorComparisonError) as caught:
+        compare_retrieval_generation_experiments(
+            baseline_per_query_data=_jsonl([{"question_id": "q1", "meteor": 0.2, "rouge_l": 0.3}]),
+            candidate_per_query_data=_jsonl([{"question_id": "q1", "meteor": 0.3, "rouge_l": 0.4}]),
+            baseline_manifest_data=json.dumps(baseline_manifest).encode(),
+            candidate_manifest_data=json.dumps(candidate_manifest).encode(),
+            baseline_runtime_seconds=10.0,
+            candidate_runtime_seconds=10.0,
+        )
+
+    assert caught.value.code == "GENERATOR_COMPARISON_NOT_FIXED"
+
+
+def test_retrieval_generation_comparison_records_a_posthoc_fixed_pair() -> None:
+    baseline_manifest = json.loads(
+        _manifest(run_id="G1R0", baseline_run_id="G1-old", adapter=False)
+    )
+    baseline_manifest["comparison"]["changed_axes"] = ["retrieval"]
+    candidate_manifest = json.loads(
+        _manifest(run_id="G1R2", baseline_run_id="G1-old", adapter=False)
+    )
+    candidate_manifest["retrieval_output_checksum"] = "sha256:" + "f" * 64
+    candidate_manifest["comparison"]["changed_axes"] = ["retrieval"]
+    metrics = _jsonl([{"question_id": "q1", "meteor": 0.3, "rouge_l": 0.4}])
+
+    result = compare_retrieval_generation_experiments(
+        baseline_per_query_data=metrics,
+        candidate_per_query_data=metrics,
+        baseline_manifest_data=json.dumps(baseline_manifest).encode(),
+        candidate_manifest_data=json.dumps(candidate_manifest).encode(),
+        baseline_runtime_seconds=10.0,
+        candidate_runtime_seconds=10.0,
+    )
+
+    value = json.loads(result)
+    assert value["comparison_pairing"] == "posthoc_fixed_retrieval_pair"
+    assert value["candidate_declared_baseline_run_id"] == "G1-old"

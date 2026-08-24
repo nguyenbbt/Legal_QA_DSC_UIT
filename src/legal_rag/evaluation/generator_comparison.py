@@ -23,6 +23,16 @@ _FIXED_FIELDS = (
     "evidence_limit",
     "decoding",
 )
+_RETRIEVAL_FIXED_FIELDS = (
+    "model_id",
+    "model_revision",
+    "prompt_checksum",
+    "annotation_queue_checksum",
+    "references_checksum",
+    "evidence_limit",
+    "decoding",
+    "adapter",
+)
 
 
 class GeneratorComparisonError(Exception):
@@ -78,17 +88,19 @@ def _interval(deltas: np.ndarray, indices: np.ndarray) -> list[float]:
     return [float(value) for value in np.quantile(means, [0.025, 0.975], method="linear")]
 
 
-def compare_generator_experiments(
+def _compare_metric_rows(
     *,
     baseline_per_query_data: bytes,
     candidate_per_query_data: bytes,
-    baseline_manifest_data: bytes,
-    candidate_manifest_data: bytes,
+    baseline_manifest: dict[str, Any],
+    candidate_manifest: dict[str, Any],
     baseline_runtime_seconds: float,
     candidate_runtime_seconds: float,
+    schema_version: str,
+    classification: str,
+    changed_axes: list[str],
+    comparison_metadata: dict[str, object] | None = None,
 ) -> bytes:
-    """Compare one adapter-only candidate against a fixed generator baseline."""
-
     if (
         not math.isfinite(baseline_runtime_seconds)
         or not math.isfinite(candidate_runtime_seconds)
@@ -96,25 +108,6 @@ def compare_generator_experiments(
         or candidate_runtime_seconds <= 0
     ):
         _fail("GENERATOR_COMPARISON_INPUT_INVALID", "runtime values must be positive")
-    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
-    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
-    if any(baseline_manifest.get(key) != candidate_manifest.get(key) for key in _FIXED_FIELDS):
-        _fail(
-            "GENERATOR_COMPARISON_NOT_FIXED",
-            "generator-only comparison changed an input other than the adapter",
-        )
-    comparison = candidate_manifest.get("comparison")
-    if (
-        not isinstance(comparison, dict)
-        or comparison.get("baseline_run_id") != baseline_manifest.get("run_id")
-        or comparison.get("changed_axes") != ["adapter"]
-        or not isinstance(candidate_manifest.get("adapter"), dict)
-    ):
-        _fail(
-            "GENERATOR_COMPARISON_NOT_FIXED",
-            "candidate must declare the baseline and adapter as its only changed axis",
-        )
-
     baseline = _metric_rows(baseline_per_query_data, label="baseline")
     candidate = _metric_rows(candidate_per_query_data, label="candidate")
     if set(baseline) != set(candidate):
@@ -154,11 +147,12 @@ def compare_generator_experiments(
 
     return content_json_bytes(
         {
-            "schema_version": "generator.adapter.comparison.v1",
+            "schema_version": schema_version,
             "baseline_run_id": baseline_manifest["run_id"],
             "candidate_run_id": candidate_manifest["run_id"],
-            "classification": "generator_only_single_axis",
-            "changed_axes": ["adapter"],
+            "classification": classification,
+            "changed_axes": changed_axes,
+            **(comparison_metadata or {}),
             "fixed_inputs_verified": True,
             "question_count": len(question_ids),
             "metrics": {
@@ -202,7 +196,105 @@ def compare_generator_experiments(
     )
 
 
+def compare_generator_experiments(
+    *,
+    baseline_per_query_data: bytes,
+    candidate_per_query_data: bytes,
+    baseline_manifest_data: bytes,
+    candidate_manifest_data: bytes,
+    baseline_runtime_seconds: float,
+    candidate_runtime_seconds: float,
+) -> bytes:
+    """Compare one adapter-only candidate against a fixed generator baseline."""
+
+    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
+    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
+    if any(baseline_manifest.get(key) != candidate_manifest.get(key) for key in _FIXED_FIELDS):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "generator-only comparison changed an input other than the adapter",
+        )
+    comparison = candidate_manifest.get("comparison")
+    if (
+        not isinstance(comparison, dict)
+        or comparison.get("baseline_run_id") != baseline_manifest.get("run_id")
+        or comparison.get("changed_axes") != ["adapter"]
+        or not isinstance(candidate_manifest.get("adapter"), dict)
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "candidate must declare the baseline and adapter as its only changed axis",
+        )
+    return _compare_metric_rows(
+        baseline_per_query_data=baseline_per_query_data,
+        candidate_per_query_data=candidate_per_query_data,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_runtime_seconds=baseline_runtime_seconds,
+        candidate_runtime_seconds=candidate_runtime_seconds,
+        schema_version="generator.adapter.comparison.v1",
+        classification="generator_only_single_axis",
+        changed_axes=["adapter"],
+    )
+
+
+def compare_retrieval_generation_experiments(
+    *,
+    baseline_per_query_data: bytes,
+    candidate_per_query_data: bytes,
+    baseline_manifest_data: bytes,
+    candidate_manifest_data: bytes,
+    baseline_runtime_seconds: float,
+    candidate_runtime_seconds: float,
+) -> bytes:
+    """Apply EVAL-005 to a retrieval-only change with a fixed generator."""
+
+    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
+    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
+    if any(
+        baseline_manifest.get(key) != candidate_manifest.get(key) for key in _RETRIEVAL_FIXED_FIELDS
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "retrieval-only comparison changed the generator configuration",
+        )
+    comparison = candidate_manifest.get("comparison")
+    declared_baseline = comparison.get("baseline_run_id") if isinstance(comparison, dict) else None
+    if (
+        not isinstance(comparison, dict)
+        or not isinstance(declared_baseline, str)
+        or not declared_baseline.strip()
+        or comparison.get("changed_axes") != ["retrieval"]
+        or baseline_manifest.get("retrieval_output_checksum")
+        == candidate_manifest.get("retrieval_output_checksum")
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "candidate must declare retrieval as its only changed axis",
+        )
+    return _compare_metric_rows(
+        baseline_per_query_data=baseline_per_query_data,
+        candidate_per_query_data=candidate_per_query_data,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_runtime_seconds=baseline_runtime_seconds,
+        candidate_runtime_seconds=candidate_runtime_seconds,
+        schema_version="generator.retrieval.comparison.v1",
+        classification="retrieval_only_single_axis",
+        changed_axes=["retrieval"],
+        comparison_metadata={
+            "comparison_pairing": (
+                "declared_retrieval_ablation"
+                if declared_baseline == baseline_manifest.get("run_id")
+                else "posthoc_fixed_retrieval_pair"
+            ),
+            "candidate_declared_baseline_run_id": declared_baseline,
+        },
+    )
+
+
 __all__ = [
     "GeneratorComparisonError",
     "compare_generator_experiments",
+    "compare_retrieval_generation_experiments",
 ]

@@ -184,6 +184,8 @@ def _candidate_row(candidate: RetrievalCandidate, *, include_text: bool) -> dict
         "chunk_checksum": candidate.chunk.chunk_checksum,
         "exact_reference_match": candidate.exact_reference_match,
         "sparse_score": candidate.sparse_score,
+        "dense_score": candidate.dense_score,
+        "reranker_score": candidate.reranker_score,
     }
     if include_text:
         row["display_text"] = candidate.chunk.display_text

@@ -1,0 +1,17 @@
+{
+  "schema_version": "project.gate_state.v1",
+  "active_milestone": "MIL-006",
+  "authorized_through": "MIL-009_CONDITIONAL_SEQUENCE",
+  "mil004_state": "owner_approved",
+  "pre_mil005_governance_authorized": true,
+  "pre_mil005_state": "owner_approved",
+  "continuous_owner_authorization": true,
+  "model_btc_approval_state": "approved",
+  "mil005_authorized": true,
+  "mil006_authorized": true,
+  "mil007_authorized": false,
+  "mil008_authorized": true,
+  "mil009_authorized": true,
+  "oq003_resolved": false,
+  "oq005_resolved": false
+}

@@ -8,10 +8,11 @@ import json
 import os
 import sys
 import tempfile
+import unicodedata
 from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import uuid4
 
 from legal_rag.config import load_config
@@ -205,6 +206,39 @@ def _build_parser() -> argparse.ArgumentParser:
     retrieval_run.add_argument("--annotation-queue", required=True, type=Path)
     retrieval_run.add_argument("--report", required=True, type=Path)
 
+    training = commands.add_parser(
+        "training", help="build governed local-only training artifacts", allow_abbrev=False
+    )
+    training_commands = training.add_subparsers(dest="training_command", required=True)
+    training_build = training_commands.add_parser(
+        "build-rag-sft",
+        help="mine supported official-train evidence and build RAG-SFT artifacts",
+        allow_abbrev=False,
+    )
+    training_build.add_argument("--questions", required=True, type=Path)
+    training_build.add_argument("--split-manifest", required=True, type=Path)
+    training_build.add_argument("--chunks", required=True, type=Path)
+    training_build.add_argument("--aliases", required=True, type=Path)
+    training_build.add_argument("--alias-manifest", required=True, type=Path)
+    training_build.add_argument("--index-database", required=True, type=Path)
+    training_build.add_argument("--index-manifest", required=True, type=Path)
+    training_build.add_argument("--reranker-checkpoint", required=True, type=Path)
+    training_build.add_argument("--model-id", required=True)
+    training_build.add_argument("--model-revision", required=True)
+    training_build.add_argument("--selection-output", required=True, type=Path)
+    training_build.add_argument("--provenance-output", required=True, type=Path)
+    training_build.add_argument("--material-output", required=True, type=Path)
+    training_build.add_argument("--manifest-output", required=True, type=Path)
+    training_build.add_argument("--mining-report-output", required=True, type=Path)
+    training_build.add_argument("--minimum-support-score", type=float, default=0.95)
+    training_build.add_argument("--minimum-answer-token-coverage", type=float, default=0.6)
+    training_build.add_argument("--maximum-candidates", type=int, default=3)
+    training_build.add_argument("--maximum-evidence", type=int, default=3)
+    training_build.add_argument("--maximum-train-questions", type=int)
+    training_build.add_argument("--batch-size", type=int, default=8)
+    training_build.add_argument("--maximum-length", type=int, default=4096)
+    training_build.add_argument("--device", choices=("cuda", "cpu"), default="cuda")
+
     grounding = commands.add_parser(
         "grounding", help="manage private grounding contracts", allow_abbrev=False
     )
@@ -223,6 +257,35 @@ def _build_parser() -> argparse.ArgumentParser:
     grounding_validate.add_argument("--manifest", required=True, type=Path)
     grounding_validate.add_argument("--benchmark", required=True, type=Path)
     grounding_validate.add_argument("--output", required=True, type=Path)
+    grounding_annotate = grounding_commands.add_parser(
+        "annotate",
+        help="interactively label the private MIL-004 grounding queue",
+        allow_abbrev=False,
+    )
+    grounding_annotate.add_argument("--queue", required=True, type=Path)
+    grounding_annotate.add_argument("--progress", required=True, type=Path)
+    grounding_annotate.add_argument("--annotator-id", required=True)
+    grounding_annotate.add_argument("--question-id")
+    grounding_import = grounding_commands.add_parser(
+        "import-labeled",
+        help="import a relevance-labeled private MIL-004 queue",
+        allow_abbrev=False,
+    )
+    grounding_import.add_argument("--queue", required=True, type=Path)
+    grounding_import.add_argument("--labeled-queue", required=True, type=Path)
+    grounding_import.add_argument("--progress", required=True, type=Path)
+    grounding_import.add_argument("--annotator-id", required=True)
+    grounding_export = grounding_commands.add_parser(
+        "export",
+        help="export complete grounding labels and their manifest",
+        allow_abbrev=False,
+    )
+    grounding_export.add_argument("--queue", required=True, type=Path)
+    grounding_export.add_argument("--progress", required=True, type=Path)
+    grounding_export.add_argument("--benchmark", required=True, type=Path)
+    grounding_export.add_argument("--manifest", required=True, type=Path)
+    grounding_export.add_argument("--approval-state", required=True, choices=("draft", "approved"))
+    grounding_export.add_argument("--owner-confirmation")
 
     baseline = commands.add_parser(
         "baseline", help="build the corpus-free MIL-003 baseline", allow_abbrev=False
@@ -765,6 +828,77 @@ def _run_retrieval(arguments: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _run_training(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError
+    from legal_rag.evaluation.split import SplitError
+    from legal_rag.models.manifest import ModelManifestError
+    from legal_rag.retrieval.disk_bm25 import DiskBm25Error
+    from legal_rag.retrieval.exact import AliasArtifactError
+    from legal_rag.training.evidence_mining import EvidenceMiningError
+    from legal_rag.training.local_dataset import (
+        LocalDatasetPaths,
+        LocalDatasetRunConfig,
+        build_local_rag_sft_dataset,
+    )
+    from legal_rag.training.rag_sft import RagSftBuildError
+
+    if arguments.training_command != "build-rag-sft":
+        raise CliError("TRAINING_COMMAND_INVALID", "training command is invalid", exit_code=2)
+    try:
+        result = build_local_rag_sft_dataset(
+            LocalDatasetPaths(
+                questions=arguments.questions,
+                split_manifest=arguments.split_manifest,
+                chunks=arguments.chunks,
+                aliases=arguments.aliases,
+                alias_manifest=arguments.alias_manifest,
+                index_database=arguments.index_database,
+                index_manifest=arguments.index_manifest,
+                reranker_checkpoint=arguments.reranker_checkpoint,
+                selection_output=arguments.selection_output,
+                provenance_output=arguments.provenance_output,
+                material_output=arguments.material_output,
+                manifest_output=arguments.manifest_output,
+                mining_report_output=arguments.mining_report_output,
+            ),
+            LocalDatasetRunConfig(
+                model_id=arguments.model_id,
+                model_revision=arguments.model_revision,
+                minimum_support_score=arguments.minimum_support_score,
+                minimum_answer_token_coverage=arguments.minimum_answer_token_coverage,
+                maximum_candidates=arguments.maximum_candidates,
+                maximum_evidence=arguments.maximum_evidence,
+                maximum_train_questions=arguments.maximum_train_questions,
+                device=arguments.device,
+                batch_size=arguments.batch_size,
+                maximum_length=arguments.maximum_length,
+            ),
+        )
+    except (
+        AliasArtifactError,
+        DiskBm25Error,
+        EvidenceMiningError,
+        ImmutableArtifactError,
+        ModelManifestError,
+        RagSftBuildError,
+        SplitError,
+    ) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    except (OSError, ValueError) as error:
+        raise CliError(
+            "TRAINING_INPUT_INVALID",
+            "local training input or configuration is invalid",
+            exit_code=2,
+        ) from error
+    return {
+        "summary": (
+            f"RAG-SFT DATASET COMPLETE candidates={result.candidate_rows} "
+            f"accepted={result.accepted_rows} rejected={result.rejected_rows} "
+            f"{result.manifest_checksum}"
+        )
+    }
+
+
 def _run_grounding_validation(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
     from legal_rag.grounding.validation import (
@@ -800,6 +934,280 @@ def _run_grounding_validation(arguments: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _prompt_annotation_choice(prompt: str, choices: dict[str, str]) -> str:
+    while True:
+        try:
+            response = input(prompt).strip().casefold()
+        except (EOFError, KeyboardInterrupt) as error:
+            raise CliError(
+                "GROUNDING_ANNOTATION_INTERRUPTED",
+                "annotation stopped; previously completed questions remain saved",
+                exit_code=2,
+            ) from error
+        if response in choices:
+            return choices[response]
+        print(f"Lựa chọn không hợp lệ. Dùng: {', '.join(choices)}")
+
+
+def _run_grounding_annotation(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.checksums import checksum_bytes
+    from legal_rag.grounding.annotation import (
+        AnnotationQueueItem,
+        GroundingAnnotationError,
+        QuestionAnnotation,
+        Relevance,
+        annotation_progress_bytes,
+        load_annotation_progress,
+        load_annotation_queue,
+        new_annotation_progress,
+        record_question_annotation,
+        require_private_grounding_path,
+        write_annotation_progress,
+    )
+
+    try:
+        queue_path = require_private_grounding_path(arguments.queue, project_root=Path.cwd())
+        progress_path = require_private_grounding_path(arguments.progress, project_root=Path.cwd())
+        queue_data = _read_bytes(
+            queue_path,
+            code="GROUNDING_QUEUE_SOURCE_INVALID",
+            message="annotation queue is unavailable",
+            exit_code=2,
+        )
+        queue = load_annotation_queue(queue_data)
+        if progress_path.exists():
+            progress = load_annotation_progress(
+                _read_bytes(
+                    progress_path,
+                    code="GROUNDING_PROGRESS_SOURCE_INVALID",
+                    message="annotation progress is unavailable",
+                    exit_code=2,
+                ),
+                queue,
+            )
+            if progress.annotator_id != arguments.annotator_id:
+                raise GroundingAnnotationError(
+                    "GROUNDING_ANNOTATOR_MISMATCH",
+                    "annotator ID differs from the existing progress artifact",
+                )
+        else:
+            progress = new_annotation_progress(queue, annotator_id=arguments.annotator_id)
+
+        by_id = {item.question_id: item for item in queue.items}
+        completed_ids = {annotation.question_id for annotation in progress.annotations}
+        targets: tuple[AnnotationQueueItem, ...]
+        if arguments.question_id is not None:
+            selected = by_id.get(arguments.question_id)
+            if selected is None:
+                raise GroundingAnnotationError(
+                    "GROUNDING_ANNOTATION_QUESTION_UNKNOWN",
+                    "requested question is absent from the work queue",
+                )
+            targets = (selected,)
+        else:
+            targets = tuple(item for item in queue.items if item.question_id not in completed_ids)
+
+        for item in targets:
+            print(f"\n=== {item.question_id} ===")
+            print(f"Câu hỏi: {item.question}")
+            print(f"Đáp án BTC: {item.gold_answer}")
+            evidence_labels: list[tuple[str, Relevance]] = []
+            for position, candidate in enumerate(item.candidates, start=1):
+                print(f"\n[{position}/{len(item.candidates)}] {candidate.evidence_id}")
+                print(f"Cấu trúc: {' > '.join(candidate.hierarchy_path)}")
+                print(candidate.display_text)
+                relevance = _prompt_annotation_choice(
+                    "Nhãn [r=relevant, p=partially relevant, n=not relevant]: ",
+                    {
+                        "r": "relevant",
+                        "p": "partially_relevant",
+                        "n": "not_relevant",
+                    },
+                )
+                evidence_labels.append((candidate.evidence_id, cast("Relevance", relevance)))
+            try:
+                claims_input = input(
+                    "Các claim bắt buộc, ngăn cách bằng dấu ';' (có thể để trống): "
+                )
+            except (EOFError, KeyboardInterrupt) as error:
+                raise CliError(
+                    "GROUNDING_ANNOTATION_INTERRUPTED",
+                    "annotation stopped; current question was not saved",
+                    exit_code=2,
+                ) from error
+            claims = tuple(
+                dict.fromkeys(
+                    unicodedata.normalize("NFC", value.strip())
+                    for value in claims_input.split(";")
+                    if value.strip()
+                )
+            )
+            answerability = _prompt_annotation_choice(
+                "Answerability [a=answerable, n=not answerable, u=unknown]: ",
+                {"a": "answerable", "n": "not_answerable", "u": "unknown"},
+            )
+            temporal = _prompt_annotation_choice(
+                "Temporal [v=valid, i=invalid, u=unknown, x=not applicable]: ",
+                {"v": "valid", "i": "invalid", "u": "unknown", "x": "not_applicable"},
+            )
+            progress = record_question_annotation(
+                queue,
+                progress,
+                QuestionAnnotation(
+                    question_id=item.question_id,
+                    evidence_labels=tuple(evidence_labels),
+                    required_claims=claims,
+                    question_answerability=cast(
+                        "Literal['answerable', 'not_answerable', 'unknown']", answerability
+                    ),
+                    temporal_assessment=cast(
+                        "Literal['valid', 'invalid', 'unknown', 'not_applicable']", temporal
+                    ),
+                ),
+            )
+            write_annotation_progress(progress_path, progress)
+            print(f"Đã lưu {item.question_id}.")
+    except GroundingAnnotationError as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+
+    completed = len(progress.annotations)
+    return {
+        "summary": (
+            f"GROUNDING ANNOTATION SAVED completed={completed}/60 "
+            f"{checksum_bytes(annotation_progress_bytes(progress))}"
+        )
+    }
+
+
+def _run_grounding_export(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.grounding.annotation import (
+        ApprovalState,
+        GroundingAnnotationError,
+        export_grounding_benchmark,
+        load_annotation_progress,
+        load_annotation_queue,
+        require_private_grounding_path,
+    )
+
+    try:
+        queue_path = require_private_grounding_path(arguments.queue, project_root=Path.cwd())
+        progress_path = require_private_grounding_path(arguments.progress, project_root=Path.cwd())
+        benchmark_path = require_private_grounding_path(
+            arguments.benchmark, project_root=Path.cwd()
+        )
+        manifest_path = require_private_grounding_path(arguments.manifest, project_root=Path.cwd())
+        queue = load_annotation_queue(
+            _read_bytes(
+                queue_path,
+                code="GROUNDING_QUEUE_SOURCE_INVALID",
+                message="annotation queue is unavailable",
+                exit_code=2,
+            )
+        )
+        progress = load_annotation_progress(
+            _read_bytes(
+                progress_path,
+                code="GROUNDING_PROGRESS_SOURCE_INVALID",
+                message="annotation progress is unavailable",
+                exit_code=2,
+            ),
+            queue,
+        )
+        benchmark_data, manifest_data = export_grounding_benchmark(
+            queue,
+            progress,
+            benchmark_path=benchmark_path.name,
+            approval_state=cast("ApprovalState", arguments.approval_state),
+            owner_confirmation=arguments.owner_confirmation,
+        )
+        for path, expected in (
+            (benchmark_path, benchmark_data),
+            (manifest_path, manifest_data),
+        ):
+            if path.exists() and path.read_bytes() != expected:
+                raise ImmutableArtifactError(
+                    "ARTIFACT_IMMUTABLE", "an existing grounding artifact cannot be replaced"
+                )
+        benchmark_checksum = write_immutable_bytes(benchmark_path, benchmark_data)
+        write_immutable_bytes(manifest_path, manifest_data)
+    except (GroundingAnnotationError, ImmutableArtifactError, OSError) as error:
+        if isinstance(error, OSError):
+            raise CliError(
+                "GROUNDING_EXPORT_SOURCE_INVALID",
+                "grounding export artifact could not be read",
+                exit_code=2,
+            ) from error
+        raise CliError(error.code, error.message, exit_code=2) from error
+    return {
+        "summary": (
+            "GROUNDING EXPORT COMPLETE questions=60 "
+            f"status={arguments.approval_state} {benchmark_checksum}"
+        )
+    }
+
+
+def _run_grounding_label_import(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.grounding.annotation import (
+        GroundingAnnotationError,
+        annotation_progress_bytes,
+        import_labeled_annotation_queue,
+        load_annotation_queue,
+        require_private_grounding_path,
+        write_annotation_progress,
+    )
+
+    try:
+        queue_path = require_private_grounding_path(arguments.queue, project_root=Path.cwd())
+        labeled_path = require_private_grounding_path(
+            arguments.labeled_queue, project_root=Path.cwd()
+        )
+        progress_path = require_private_grounding_path(arguments.progress, project_root=Path.cwd())
+        queue = load_annotation_queue(
+            _read_bytes(
+                queue_path,
+                code="GROUNDING_QUEUE_SOURCE_INVALID",
+                message="annotation queue is unavailable",
+                exit_code=2,
+            )
+        )
+        imported = import_labeled_annotation_queue(
+            queue,
+            _read_bytes(
+                labeled_path,
+                code="GROUNDING_LABELED_QUEUE_SOURCE_INVALID",
+                message="labeled annotation queue is unavailable",
+                exit_code=2,
+            ),
+            annotator_id=arguments.annotator_id,
+        )
+        expected_progress = annotation_progress_bytes(imported.progress)
+        if (
+            progress_path.exists()
+            and _read_bytes(
+                progress_path,
+                code="GROUNDING_PROGRESS_SOURCE_INVALID",
+                message="existing annotation progress is unavailable",
+                exit_code=2,
+            )
+            != expected_progress
+        ):
+            raise GroundingAnnotationError(
+                "GROUNDING_PROGRESS_EXISTS",
+                "a different annotation progress artifact already exists",
+            )
+        progress_checksum = write_annotation_progress(progress_path, imported.progress)
+    except GroundingAnnotationError as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    return {
+        "summary": (
+            "GROUNDING LABEL IMPORT COMPLETE questions=60 "
+            f"metadata_defaults={imported.defaulted_metadata_question_count} "
+            f"{progress_checksum}"
+        )
+    }
+
+
 def _run_grounding(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.domain.checksums import checksum_bytes
     from legal_rag.evaluation.grounding import (
@@ -814,6 +1222,12 @@ def _run_grounding(arguments: argparse.Namespace) -> dict[str, str]:
         load_split_questions_jsonl,
     )
 
+    if arguments.grounding_command == "annotate":
+        return _run_grounding_annotation(arguments)
+    if arguments.grounding_command == "import-labeled":
+        return _run_grounding_label_import(arguments)
+    if arguments.grounding_command == "export":
+        return _run_grounding_export(arguments)
     if arguments.grounding_command == "validate":
         return _run_grounding_validation(arguments)
     if arguments.grounding_command != "sample":
@@ -1173,6 +1587,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "scorer": _run_scorer,
             "split": _run_split,
             "submit": _run_submit,
+            "training": _run_training,
         }
         report = handlers[arguments.command](arguments)
     except CliError as error:

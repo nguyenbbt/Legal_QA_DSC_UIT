@@ -125,6 +125,8 @@ def test_disk_bm25_matches_the_reference_scores_and_order(tmp_path: Path) -> Non
         "2",
         "3",
     )
+    requested_ids = tuple(item.chunk.chunk_id for item in disk_result.candidates[:2])
+    assert tuple(chunk.chunk_id for chunk in disk.chunks_by_ids(requested_ids)) == requested_ids
     disk.close()
 
 

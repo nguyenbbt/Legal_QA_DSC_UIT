@@ -1,0 +1,37 @@
+{
+  "schema_version": "model.shortlist.v1",
+  "approval_state": "approved",
+  "components": [
+    {
+      "role": "embedding",
+      "model_id": "Qwen/Qwen3-Embedding-0.6B",
+      "revision": "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3",
+      "license": "apache-2.0",
+      "published_safetensors_numel": 595776512,
+      "btc_approval_state": "approved",
+      "btc_approval_evidence": "D-050 owner-recorded BTC approval, 2026-08-24"
+    },
+    {
+      "role": "generator",
+      "model_id": "Qwen/Qwen3-1.7B",
+      "revision": "70d244cc86ccca08cf5af4e1e306ecf908b1ad5e",
+      "license": "apache-2.0",
+      "published_safetensors_numel": 2031739904,
+      "btc_approval_state": "approved",
+      "btc_approval_evidence": "D-050 owner-recorded BTC approval, 2026-08-24"
+    },
+    {
+      "role": "reranker",
+      "model_id": "Qwen/Qwen3-Reranker-0.6B",
+      "revision": "e61197ed45024b0ed8a2d74b80b4d909f1255473",
+      "license": "apache-2.0",
+      "published_safetensors_numel": 595776512,
+      "btc_approval_state": "approved",
+      "btc_approval_evidence": "D-050 owner-recorded BTC approval, 2026-08-24"
+    }
+  ],
+  "published_system_numel_without_adapters": 3223292928,
+  "competition_limit_exclusive": 4000000000,
+  "published_count_passes_limit": true,
+  "official_profile_enabled": true
+}

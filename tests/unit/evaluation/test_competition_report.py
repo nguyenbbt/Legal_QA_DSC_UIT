@@ -43,6 +43,21 @@ def test_competition_report_records_order_scores_checksums_and_versions() -> Non
     assert per_query[0]["rouge_l"] == 1.0
 
 
+def test_competition_report_accepts_model_specific_provenance() -> None:
+    evaluation = evaluate_competition_bytes(
+        _json_bytes({"q": {"answer": "one"}}),
+        _json_bytes({"q": "one"}),
+        scorer_root=Path("Scoring-Program-Task-LegalQA"),
+        nltk_data_root=Path("resources/nltk_data"),
+        baseline_kind="zero_shot_grounded_generator",
+        limitation="exploratory_non_promotable_btc_pending",
+    )
+
+    report = json.loads(evaluation.report_bytes)
+    assert report["baseline_kind"] == "zero_shot_grounded_generator"
+    assert report["limitation"] == "exploratory_non_promotable_btc_pending"
+
+
 def test_competition_report_rejects_id_mismatch() -> None:
     with pytest.raises(CompetitionEvaluationError) as captured:
         evaluate_competition_bytes(

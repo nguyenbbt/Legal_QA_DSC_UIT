@@ -125,6 +125,8 @@ def evaluate_competition_bytes(
     *,
     scorer_root: Path,
     nltk_data_root: Path,
+    baseline_kind: str = "plumbing_baseline",
+    limitation: str = "fixed_refusal_without_real_context_index",
 ) -> CompetitionEvaluation:
     """Score strict inputs and render stable per-query and macro artifacts."""
 
@@ -150,7 +152,7 @@ def evaluate_competition_bytes(
         "schema_version": "competition.evaluation.report.v1",
         "mode": "official_exact",
         "execution_mode": "local-offline",
-        "baseline_kind": "plumbing_baseline",
+        "baseline_kind": baseline_kind,
         "question_count": len(result.question_ids),
         "question_order": list(result.question_ids),
         "ordering": "prediction_input_order",
@@ -163,7 +165,7 @@ def evaluate_competition_bytes(
         },
         "dependencies": {"numpy": version("numpy"), "nltk": version("nltk")},
         "supplied_scorer": supplied_scorer_provenance(scorer_root / "scoring.py"),
-        "limitation": "fixed_refusal_without_real_context_index",
+        "limitation": limitation,
     }
     return CompetitionEvaluation(
         per_query_bytes=per_query_bytes,

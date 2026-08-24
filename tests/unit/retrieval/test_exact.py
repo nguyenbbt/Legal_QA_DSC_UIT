@@ -88,6 +88,21 @@ def test_parser_fails_closed_for_malformed_or_ambiguous_references(
     assert result.diagnostics[-1].code == code
 
 
+@pytest.mark.parametrize(
+    "question",
+    (
+        "Điều kiện hưởng chế độ ốm đau như thế nào?",
+        "Ai điều tra ổ dịch động vật thủy sản?",
+        "Thủ tục điều chỉnh chứng chỉ hành nghề ra sao?",
+    ),
+)
+def test_parser_does_not_treat_semantic_dieu_as_a_legal_coordinate(question: str) -> None:
+    result = parse_legal_reference(question)
+
+    assert result.reference is None
+    assert result.diagnostics[-1].code == "EXACT_COORDINATE_ABSENT"
+
+
 def test_alias_artifact_is_closed_ordered_and_bound_to_context() -> None:
     context = context_record("Điều 1. Nội dung.")
     corpus_checksum = checksum_bytes(b"synthetic-corpus")

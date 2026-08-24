@@ -49,6 +49,8 @@ class _RetrievalCandidate(FrozenStrictModel, frozen=True):
     chunk_checksum: Sha256
     exact_reference_match: bool
     sparse_score: FiniteScore | None
+    dense_score: FiniteScore | None = None
+    reranker_score: FiniteScore | None = None
 
     @model_validator(mode="after")
     def _validate_span(self) -> Self:
@@ -168,6 +170,8 @@ def _candidate_identity(
         candidate.chunk_checksum,
         candidate.exact_reference_match,
         candidate.sparse_score,
+        candidate.dense_score,
+        candidate.reranker_score,
     )
 
 

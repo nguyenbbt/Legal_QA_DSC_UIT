@@ -36,6 +36,14 @@ def _merge_candidate(
         chunk=existing.chunk,
         exact_reference_match=(existing.exact_reference_match or incoming.exact_reference_match),
         sparse_score=sparse_score,
+        dense_score=existing.dense_score
+        if existing.dense_score is not None
+        else incoming.dense_score,
+        reranker_score=(
+            existing.reranker_score
+            if existing.reranker_score is not None
+            else incoming.reranker_score
+        ),
     )
 
 

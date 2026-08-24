@@ -549,6 +549,22 @@ class DiskBm25Index:
         )
         return self._load_chunks(doc_ids)
 
+    def chunks_by_ids(self, chunk_ids: tuple[str, ...]) -> tuple[ChunkRecord, ...]:
+        """Resolve an explicit bounded ID list in caller order."""
+
+        if len(chunk_ids) != len(set(chunk_ids)):
+            _fail("SPARSE_CHUNK_ID_DUPLICATE", "requested chunk IDs must be unique")
+        doc_ids: list[int] = []
+        for chunk_id in chunk_ids:
+            row = self._connection.execute(
+                "SELECT doc_id FROM documents WHERE chunk_id=?",
+                (chunk_id,),
+            ).fetchone()
+            if row is None:
+                _fail("SPARSE_DOCUMENT_MISSING", "requested chunk is absent from the index")
+            doc_ids.append(int(row[0]))
+        return self._load_chunks(tuple(doc_ids))
+
     def chunks_for_coordinate(
         self,
         hierarchy_kind: str,

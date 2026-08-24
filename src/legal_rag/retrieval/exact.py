@@ -50,7 +50,10 @@ _DOCUMENT_NUMBER = re.compile(
     """,
     _FLAGS,
 )
-_REFERENCE_TOKEN = re.compile(r"(?<!\w)(?:điểm|khoản|điều)(?!\w)", re.IGNORECASE | re.UNICODE)
+_REFERENCE_TOKEN = re.compile(
+    rf"(?<!\w)(?:điểm{_H}+[a-zđ]|khoản{_H}+[0-9]+[a-zđ]?|điều{_H}+[0-9]+[a-zđ]?)(?!\w)",
+    re.IGNORECASE | re.UNICODE,
+)
 
 
 class AliasArtifactError(Exception):

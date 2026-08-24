@@ -12,6 +12,8 @@ class RetrievalCandidate:
     chunk: ChunkRecord
     exact_reference_match: bool
     sparse_score: float | None
+    dense_score: float | None = None
+    reranker_score: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

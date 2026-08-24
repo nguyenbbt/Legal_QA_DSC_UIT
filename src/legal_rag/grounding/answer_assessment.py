@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 from dataclasses import dataclass
 from typing import Literal, Self
@@ -176,6 +177,99 @@ def _schema_error(error: RecordValidationError) -> AnswerAssessmentError:
     return AnswerAssessmentError("GROUNDING_ASSESSMENT_SCHEMA_INVALID", message)
 
 
+def build_answer_assessment_queue(
+    *,
+    annotation_queue_data: bytes,
+    retrieval_output_data: bytes,
+    predictions_data: bytes,
+    evaluated_run_id: str,
+    evidence_limit: int,
+) -> bytes:
+    """Build a pending human-grounding queue from checksum-bound run outputs."""
+
+    if not evaluated_run_id.strip() or evidence_limit < 1:
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_SOURCE_INVALID",
+            "assessment run ID and evidence limit must be valid",
+        )
+    try:
+        queue = tuple(json.loads(line) for line in annotation_queue_data.splitlines())
+        retrieval = tuple(json.loads(line) for line in retrieval_output_data.splitlines())
+        predictions = json.loads(predictions_data)
+        queue_by_id = {item["question_id"]: item for item in queue}
+        retrieval_by_id = {item["question_id"]: item for item in retrieval}
+    except (UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_SOURCE_INVALID",
+            "assessment source artifacts are invalid",
+        ) from error
+    if (
+        not queue
+        or not isinstance(predictions, dict)
+        or len(queue_by_id) != len(queue)
+        or len(retrieval_by_id) != len(retrieval)
+        or not set(queue_by_id).issubset(retrieval_by_id)
+        or set(queue_by_id) != set(predictions)
+    ):
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_ID_MISMATCH",
+            "assessment source question IDs differ",
+        )
+
+    output: list[bytes] = []
+    try:
+        for source in queue:
+            question_id = source["question_id"]
+            candidates = {
+                item["evidence_id"]: item["display_text"] for item in source["candidates"]
+            }
+            ranked_ids = tuple(
+                item["evidence_id"]
+                for item in retrieval_by_id[question_id]["candidates"][:evidence_limit]
+            )
+            answer = predictions[question_id]["answer"]
+            if (
+                not isinstance(question_id, str)
+                or not isinstance(source["question"], str)
+                or not isinstance(source["gold_answer"], str)
+                or not isinstance(answer, str)
+                or not answer.strip()
+                or not ranked_ids
+                or len(ranked_ids) != len(set(ranked_ids))
+                or any(evidence_id not in candidates for evidence_id in ranked_ids)
+            ):
+                raise ValueError
+            item = AnswerAssessmentWorkItem(
+                schema_version="grounding.answer-assessment.work-item.v1",
+                question_id=question_id,
+                evaluated_run_id=evaluated_run_id,
+                answer_checksum=checksum_bytes(answer.encode()),
+                question=source["question"],
+                gold_answer=source["gold_answer"],
+                generated_answer=answer,
+                evidence=tuple(
+                    AnswerAssessmentEvidence(
+                        evidence_id=evidence_id,
+                        display_text=candidates[evidence_id],
+                    )
+                    for evidence_id in ranked_ids
+                ),
+                answer_support=None,
+                unsupported_claim_count=None,
+                annotator_id=None,
+                adjudicator_id=None,
+                adjudication_state="pending",
+                label_version="grounding.v1",
+            )
+            output.append(content_json_bytes(item.model_dump(mode="json")))
+    except (KeyError, TypeError, ValueError) as error:
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_SOURCE_INVALID",
+            "assessment source rows or ranked evidence are invalid",
+        ) from error
+    return b"".join(output)
+
+
 def _load_rows(data: bytes, *, artifact_name: str) -> tuple[AnswerAssessmentWorkItem, ...]:
     rows: list[AnswerAssessmentWorkItem] = []
     for line_number, line in enumerate(data.splitlines(keepends=True), start=1):
@@ -254,6 +348,86 @@ def import_labeled_answer_assessment_queue(
         records=labeled,
         source_labeled_checksum=checksum_bytes(labeled_data),
     )
+
+
+def _transfer_identity(item: AnswerAssessmentWorkItem) -> tuple[object, ...]:
+    return (
+        item.schema_version,
+        item.question_id,
+        item.answer_checksum,
+        item.question,
+        item.gold_answer,
+        item.generated_answer,
+        item.evidence,
+        item.label_version,
+    )
+
+
+def prefill_answer_assessment_queue(
+    *,
+    candidate_queue_data: bytes,
+    source_queue_data: bytes,
+    source_labeled_data: bytes,
+) -> tuple[bytes, bytes]:
+    """Transfer labels only across byte-identical answer/evidence work items."""
+
+    candidate = _load_rows(
+        candidate_queue_data,
+        artifact_name="candidate-answer-grounding-work-queue.v1.jsonl",
+    )
+    source = import_labeled_answer_assessment_queue(
+        source_queue_data,
+        source_labeled_data,
+    ).records
+    if any(item.adjudication_state != "pending" for item in candidate):
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_PREFILL_TARGET_INVALID",
+            "candidate assessment queue must be entirely pending",
+        )
+    if tuple(item.question_id for item in candidate) != tuple(item.question_id for item in source):
+        raise AnswerAssessmentError(
+            "GROUNDING_ASSESSMENT_ID_MISMATCH",
+            "candidate and source assessment IDs differ",
+        )
+
+    output: list[bytes] = []
+    prefilled_ids: list[str] = []
+    pending_ids: list[str] = []
+    for target, approved in zip(candidate, source, strict=True):
+        if _transfer_identity(target) == _transfer_identity(approved):
+            value = target.model_dump(mode="python")
+            value.update(
+                {
+                    "answer_support": approved.answer_support,
+                    "unsupported_claim_count": approved.unsupported_claim_count,
+                    "annotator_id": approved.annotator_id,
+                    "adjudicator_id": approved.adjudicator_id,
+                    "adjudication_state": approved.adjudication_state,
+                }
+            )
+            target = AnswerAssessmentWorkItem.model_validate(value)
+            prefilled_ids.append(target.question_id)
+        else:
+            pending_ids.append(target.question_id)
+        output.append(content_json_bytes(target.model_dump(mode="json")))
+    prefilled_data = b"".join(output)
+    report_data = content_json_bytes(
+        {
+            "schema_version": "grounding.answer-assessment.prefill-report.v1",
+            "source_run_id": source[0].evaluated_run_id,
+            "candidate_run_id": candidate[0].evaluated_run_id,
+            "source_queue_checksum": checksum_bytes(source_queue_data),
+            "source_labeled_checksum": checksum_bytes(source_labeled_data),
+            "candidate_queue_checksum": checksum_bytes(candidate_queue_data),
+            "prefilled_output_checksum": checksum_bytes(prefilled_data),
+            "question_count": len(candidate),
+            "prefilled_count": len(prefilled_ids),
+            "pending_count": len(pending_ids),
+            "prefilled_question_ids": prefilled_ids,
+            "pending_question_ids": pending_ids,
+        }
+    )
+    return prefilled_data, report_data
 
 
 def _rates(records: tuple[GroundingAssessmentRecord, ...]) -> GroundingRates:
@@ -499,8 +673,10 @@ __all__ = [
     "GroundingAssessmentRecord",
     "GroundingRates",
     "ImportedAnswerAssessments",
+    "build_answer_assessment_queue",
     "compare_answer_grounding",
     "export_answer_assessments",
     "import_labeled_answer_assessment_queue",
     "load_approved_answer_assessments",
+    "prefill_answer_assessment_queue",
 ]

@@ -7,11 +7,89 @@ import pytest
 from legal_rag.domain.checksums import checksum_bytes, content_json_bytes
 from legal_rag.grounding.answer_assessment import (
     AnswerAssessmentError,
+    build_answer_assessment_queue,
     compare_answer_grounding,
     export_answer_assessments,
     import_labeled_answer_assessment_queue,
     load_approved_answer_assessments,
+    prefill_answer_assessment_queue,
 )
+
+
+def test_build_answer_assessment_queue_binds_answer_and_ranked_evidence() -> None:
+    queue = content_json_bytes(
+        {
+            "question_id": "q1",
+            "question": "Question",
+            "gold_answer": "Gold answer",
+            "candidates": [
+                {"evidence_id": "chunk_a", "display_text": "Evidence A"},
+                {"evidence_id": "chunk_b", "display_text": "Evidence B"},
+            ],
+        }
+    )
+    retrieval = b"".join(
+        (
+            content_json_bytes(
+                {
+                    "question_id": "q1",
+                    "candidates": [
+                        {"evidence_id": "chunk_b"},
+                        {"evidence_id": "chunk_a"},
+                    ],
+                }
+            ),
+            content_json_bytes({"question_id": "q-extra", "candidates": []}),
+        )
+    )
+    predictions = content_json_bytes({"q1": {"answer": "Generated answer"}})
+
+    result = build_answer_assessment_queue(
+        annotation_queue_data=queue,
+        retrieval_output_data=retrieval,
+        predictions_data=predictions,
+        evaluated_run_id="G1R2-fixture",
+        evidence_limit=1,
+    )
+
+    assert json.loads(result) == {
+        "schema_version": "grounding.answer-assessment.work-item.v1",
+        "question_id": "q1",
+        "evaluated_run_id": "G1R2-fixture",
+        "answer_checksum": checksum_bytes(b"Generated answer"),
+        "question": "Question",
+        "gold_answer": "Gold answer",
+        "generated_answer": "Generated answer",
+        "evidence": [{"evidence_id": "chunk_b", "display_text": "Evidence B"}],
+        "answer_support": None,
+        "unsupported_claim_count": None,
+        "annotator_id": None,
+        "adjudicator_id": None,
+        "adjudication_state": "pending",
+        "label_version": "grounding.v1",
+    }
+
+
+def test_build_answer_assessment_queue_rejects_question_id_mismatch() -> None:
+    with pytest.raises(AnswerAssessmentError) as caught:
+        build_answer_assessment_queue(
+            annotation_queue_data=content_json_bytes(
+                {
+                    "question_id": "q1",
+                    "question": "Question",
+                    "gold_answer": "Gold",
+                    "candidates": [{"evidence_id": "chunk_a", "display_text": "Evidence"}],
+                }
+            ),
+            retrieval_output_data=content_json_bytes(
+                {"question_id": "q2", "candidates": [{"evidence_id": "chunk_a"}]}
+            ),
+            predictions_data=content_json_bytes({"q1": {"answer": "Answer"}}),
+            evaluated_run_id="G1R2-fixture",
+            evidence_limit=1,
+        )
+
+    assert caught.value.code == "GROUNDING_ASSESSMENT_ID_MISMATCH"
 
 
 def _queue_data(*, labeled: bool, run_id: str = "G1A512-fixture") -> bytes:
@@ -103,6 +181,28 @@ def _approved(*, run_id: str, partial_count: int = 0):
         benchmark_manifest_data=benchmark_manifest,
         benchmark_data=benchmark,
     )
+
+
+def test_prefill_answer_assessments_reuses_only_identical_answer_and_evidence() -> None:
+    candidate_rows = [
+        json.loads(line) for line in _queue_data(labeled=False, run_id="G1R2-fixture").splitlines()
+    ]
+    candidate_rows[0]["generated_answer"] = "Changed answer"
+    candidate_rows[0]["answer_checksum"] = checksum_bytes(b"Changed answer")
+    candidate = b"".join(content_json_bytes(row) for row in candidate_rows)
+
+    prefilled, report = prefill_answer_assessment_queue(
+        candidate_queue_data=candidate,
+        source_queue_data=_queue_data(labeled=False, run_id="G1A512-fixture"),
+        source_labeled_data=_queue_data(labeled=True, run_id="G1A512-fixture"),
+    )
+
+    rows = [json.loads(line) for line in prefilled.splitlines()]
+    assert rows[0]["adjudication_state"] == "pending"
+    assert rows[1]["adjudication_state"] == "approved"
+    assert rows[1]["evaluated_run_id"] == "G1R2-fixture"
+    assert json.loads(report)["prefilled_count"] == 59
+    assert json.loads(report)["pending_question_ids"] == ["q00"]
 
 
 def test_import_labeled_answer_assessments_binds_every_identity_field() -> None:

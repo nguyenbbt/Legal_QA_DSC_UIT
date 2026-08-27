@@ -27,9 +27,7 @@ def audit_torch_module(module: Any) -> ParameterAuditReport:
     return audit_parameters(tensors)
 
 
-def audit_safetensors_directory(path: Path) -> ParameterAuditReport:
-    """Count tensor shapes directly from one immutable safetensors snapshot."""
-
+def _audit_safetensors_directory(path: Path, *, category: str) -> ParameterAuditReport:
     try:
         from safetensors import safe_open
     except ImportError as error:
@@ -42,11 +40,27 @@ def audit_safetensors_directory(path: Path) -> ParameterAuditReport:
                     ParameterTensor(
                         name=name,
                         shape=tuple(int(value) for value in stream.get_slice(name).get_shape()),
-                        category="base",
+                        category="adapter" if category == "adapter" else "base",
                         trainable=False,
                     )
                 )
     return audit_parameters(tuple(tensors))
 
 
-__all__ = ["audit_safetensors_directory", "audit_torch_module"]
+def audit_safetensors_directory(path: Path) -> ParameterAuditReport:
+    """Count tensor shapes directly from one immutable base-model snapshot."""
+
+    return _audit_safetensors_directory(path, category="base")
+
+
+def audit_adapter_safetensors_directory(path: Path) -> ParameterAuditReport:
+    """Count every tensor in one immutable PEFT checkpoint as an adapter parameter."""
+
+    return _audit_safetensors_directory(path, category="adapter")
+
+
+__all__ = [
+    "audit_adapter_safetensors_directory",
+    "audit_safetensors_directory",
+    "audit_torch_module",
+]

@@ -1,0 +1,123 @@
+{
+  "schema_id": "mil-002.exit.v1",
+  "status": "ready_for_owner_approval",
+  "execution_mode": "local-offline",
+  "authorization_boundary": {
+    "active_milestone": "MIL-002",
+    "mil_003_or_later_started": false,
+    "synthetic_fixture_only": true,
+    "paid_or_gpu_workload_launched": false,
+    "modal_job_submitted": false,
+    "real_organizer_data_processed_or_transferred": false,
+    "dense_or_reranking_started": false
+  },
+  "runtime": {
+    "python": "3.12.7",
+    "platform": "Windows",
+    "architecture": "AMD64",
+    "bm25_runtime_compatibility_id": "bm25rt.v1-cpython-3.12.7-windows-10.0.26200-x86_64-ucrt-10.0.26100.8875"
+  },
+  "fixture": {
+    "license": "CC0-1.0",
+    "question_count": 2,
+    "context_count": 2,
+    "indexable_context_count": 1,
+    "quarantined_context_count": 1,
+    "alias_count": 1,
+    "resource_manifest_checksum": "sha256:54bfe147827df6ed10a7486632b251fcb754869d5fa38e069d3375542f4b7a50",
+    "questions_checksum": "sha256:3a82dd4df1273317fc6409e65e37dccf7d0aa1ce2b54c51a739ab2a17e9db17a",
+    "aliases_checksum": "sha256:1639a64354db26111a653bda585a8d7b7e055dcf88c90196dbc9cf56312e15ea",
+    "context_1_checksum": "sha256:74388384dc70ef4f62b20289617278d3ee6bd4b40169c77ca8a97748985144eb",
+    "context_2_checksum": "sha256:725de75e0abf8ffb2083bf19500cba09528836d5066dce9cca7fdcb688c9899d"
+  },
+  "deterministic_run": {
+    "run_id": "run_2108ad5951ea52617354b525",
+    "clean_run_count": 2,
+    "artifact_count": 13,
+    "all_artifact_bytes_identical": true,
+    "answers_count": 2,
+    "submission_validation": "pass",
+    "artifacts": {
+      "aliases_manifest": "sha256:575dd4f8df746495bfd15f6efe50e72fe99568418fa82253b0e2427796069d89",
+      "answers": "sha256:44aff597444c82b2fe2e2909e8620f6aa85a8b8bddd087f5a0f3bfadc20db398",
+      "bm25_index_manifest": "sha256:1d2e85b108e57b6622a3557d29156d6445bfa3175c0801d251f83da3e893cfa9",
+      "chunks_manifest": "sha256:ae4c7d6a1a8c22c382a6a67ff7a12ebff0af9198f202033546247f9da18e1567",
+      "context_import_manifest": "sha256:54fe5795ed6d00b75e3836c9e15aa9c00c7542a6c29c20693ae523606f66fd49",
+      "contexts_import": "sha256:aac401ed15af199aaba13026b404be5f91d73a0f160df3b88472dd858bcfdf10",
+      "evidence_diagnostics": "sha256:5323a311637af0876e45aee8f338428a726c87cd12bb4ad70be1283be3cfb4f8",
+      "evidence": "sha256:0585293139cd11b8163542db15d7fbb7ac066eb51cc00bcde54c3f54e9b0218a",
+      "generated_answers": "sha256:552e7a54ddd711a54986e955014f05fd245d543b36a7a6903e24e100eaa19bb4",
+      "predictions": "sha256:47bb953bc6742434ec6871fb3a5ce2004d104e1f0f753200c0aaf16cdcd9962e",
+      "questions_import": "sha256:6813a73dad583519486467edabbe50854112620be6c177cf4e05c44d2c9d2bde",
+      "retrieval": "sha256:dca47253dd7121c0b745564db9d5e58ddf8e3aa63f8995a020022ada2b17778d",
+      "run_manifest": "sha256:c5cc7755e0381bce5a7c2b7551a2e3c9c691041e043b6ecd1f5cbcb8b8680a8d"
+    }
+  },
+  "automated_gates": {
+    "ruff_format": "pass",
+    "ruff_lint": "pass",
+    "mypy_strict": "pass",
+    "unit": {
+      "status": "pass",
+      "passed": 251,
+      "skipped": 1,
+      "deselected": 5,
+      "line_coverage_percent": 89.79,
+      "required_percent": 85.0
+    },
+    "integration": {
+      "status": "pass",
+      "passed": 4
+    },
+    "e2e": {
+      "status": "pass",
+      "passed": 1
+    },
+    "doctor_local_offline": "ready",
+    "scorer_parity_maximum_absolute_difference": 0.0,
+    "fixture_pipeline_cli": "pass",
+    "submission_build_and_validate_cli": "pass",
+    "scope_data_secret_network_workload_audit": "pass"
+  },
+  "review": {
+    "five_axis_review": "pass",
+    "security_review": "pass",
+    "code_simplification_review": "pass",
+    "unresolved_critical_findings": 0,
+    "unresolved_required_findings": 0,
+    "cross_model_review": "skipped_by_owner",
+    "resolved_findings": [
+      "retain raw organizer ID/question/field order only at the submission boundary",
+      "write predictions only after every deterministic output and checksum validates",
+      "emit redacted typed failure artifacts without replacing a valid submission",
+      "bound every MIL-002 synthetic fixture resource to 1048576 bytes",
+      "keep provider-specific, network, GPU, and Modal behavior outside the core slice"
+    ]
+  },
+  "known_limitations": [
+    "The CPU fixture generator is a plumbing baseline over two synthetic questions, not a competition-quality baseline.",
+    "Windows did not grant symlink creation for one existing checksum fixture; the covered platform-independent rejection path remains unchanged.",
+    "uv audit could not query OSV in local-offline mode because no advisory response was cached; MIL-002 added or changed no dependency and no online audit is claimed.",
+    "The repository contains pre-existing user and untracked files; no files were staged, committed, pushed, or deleted."
+  ],
+  "blocked_items_unchanged": [
+    "OQ-001 final prediction filename/archive/platform mode",
+    "OQ-002 warm-up/private artifacts",
+    "OQ-003 real-data Modal license/retention/sharing/backup/deletion permission",
+    "OQ-004 authoritative temporal source",
+    "OQ-005 measured resource budgets",
+    "OQ-006 optional research API decision"
+  ],
+  "deferred_until_later_approval": [
+    "MIL-003 organizer-valid public baseline, split, grounding, and measured budgets",
+    "real-organizer ingestion, real aliases, and full-corpus indexing",
+    "dense retrieval and reranking",
+    "paid GPU, real-data Modal, and open-weight generation",
+    "fine-tuning, research mode, and API work",
+    "MIL-004 through MIL-009"
+  ],
+  "owner_approval_required": [
+    "MIL-002 exit evidence",
+    "explicit permission to enter MIL-003"
+  ]
+}

@@ -20,6 +20,8 @@ from legal_rag.domain.execution import (
 
 CHECKSUM = "sha256:" + "0" * 64
 MODAL_ORIGIN = "https://api.modal.com"
+PUBLIC_GENERATION_APPROVAL = "APPROVE_OQ003_MODAL_A10_PUBLIC_GENERATION_V1"
+D061_PUBLIC_GENERATION_APPROVAL = "APPROVE_D061_BASE_RERANKER_PUBLIC_DIAGNOSTIC"
 
 
 def prepare_values(**changes: object) -> dict[str, object]:
@@ -79,6 +81,36 @@ def private_values(**changes: object) -> dict[str, object]:
         "declared_job_identity": "fixture-parity-v1",
         "secret_policy": "credential-store-only-redacted",
     }
+    values.update(changes)
+    return values
+
+
+def approved_public_generation_values(**changes: object) -> dict[str, object]:
+    request = transfer(
+        artifact_id="public.generation.request",
+        artifact_class="public_generation_request",
+    )
+    values = private_values(
+        transfer_allowlist=(request,),
+        real_data_approved=True,
+        approval_id=PUBLIC_GENERATION_APPROVAL,
+        modal_function_io_retention_days_maximum=7,
+        gpu="A10",
+        maximum_gpu_containers=1,
+        maximum_account_cost_usd=30,
+        private_storage_access="read-only",
+        private_storage_ids=("qwen3-public-model",),
+        declared_job_identity="public-generation-v1",
+    )
+    values.update(changes)
+    return values
+
+
+def approved_d061_public_generation_values(**changes: object) -> dict[str, object]:
+    values = approved_public_generation_values(
+        approval_id=D061_PUBLIC_GENERATION_APPROVAL,
+        declared_job_identity="d061-base-reranker-public-v1",
+    )
     values.update(changes)
     return values
 
@@ -190,6 +222,108 @@ def test_private_modal_blocks_every_real_or_derived_data_class(artifact_class: s
         )
 
     assert captured.value.code == "MODAL_REAL_DATA_NOT_APPROVED"
+
+
+def test_private_modal_accepts_only_the_exact_d052_composite_transfer() -> None:
+    config = PrivateModalConfig.model_validate(approved_public_generation_values())
+    requested = ArtifactTransfer.model_validate(
+        transfer(
+            artifact_id="public.generation.request",
+            artifact_class="public_generation_request",
+        )
+    )
+
+    assert (
+        preflight_execution(
+            config,
+            available_resource_ids=("model.public",),
+            requested_transfers=(requested,),
+        )
+        is config
+    )
+
+    response = ArtifactTransfer.model_validate(
+        transfer(
+            artifact_id="public.generation.response",
+            artifact_class="public_generation_response",
+            direction="modal-to-local",
+        )
+    )
+    response_config = PrivateModalConfig.model_validate(
+        approved_public_generation_values(transfer_allowlist=(response,))
+    )
+    assert (
+        preflight_execution(
+            response_config,
+            available_resource_ids=("model.public",),
+            requested_transfers=(response,),
+        )
+        is response_config
+    )
+
+
+def test_private_modal_accepts_exact_d061_public_diagnostic_scope() -> None:
+    config = PrivateModalConfig.model_validate(approved_d061_public_generation_values())
+    requested = ArtifactTransfer.model_validate(
+        transfer(
+            artifact_id="public.generation.request",
+            artifact_class="public_generation_request",
+        )
+    )
+
+    assert (
+        preflight_execution(
+            config,
+            available_resource_ids=("model.public",),
+            requested_transfers=(requested,),
+        )
+        is config
+    )
+
+    with pytest.raises(ValidationError):
+        PrivateModalConfig.model_validate(
+            approved_d061_public_generation_values(declared_job_identity="public-generation-v1")
+        )
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"modal_function_io_retention_days_maximum": 8},
+        {"gpu": "L4"},
+        {"maximum_gpu_containers": 2},
+        {"maximum_account_cost_usd": 31},
+        {"private_storage_access": "read-write"},
+        {"private_storage_ids": ("organizer-corpus",)},
+        {"required_resource_ids": ("model.private",)},
+        {"declared_job_identity": "another-public-run"},
+        {"transfer_allowlist": (transfer(),)},
+        {
+            "transfer_allowlist": (
+                transfer(
+                    artifact_id="public.generation.request-1",
+                    artifact_class="public_generation_request",
+                ),
+                transfer(
+                    artifact_id="public.generation.request-2",
+                    artifact_class="public_generation_request",
+                    checksum="sha256:" + "1" * 64,
+                ),
+            )
+        },
+        {
+            "transfer_allowlist": (
+                transfer(
+                    artifact_id="blocked.organizer-question",
+                    artifact_class="organizer_question",
+                ),
+            )
+        },
+    ],
+)
+def test_private_modal_rejects_d052_scope_drift(changes: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        PrivateModalConfig.model_validate(approved_public_generation_values(**changes))
 
 
 def test_private_modal_requires_manifested_resources_and_exact_transfer_allowlist() -> None:

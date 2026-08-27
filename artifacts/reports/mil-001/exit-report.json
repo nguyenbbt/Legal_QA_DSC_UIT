@@ -1,0 +1,144 @@
+{
+  "schema_id": "mil-001.exit.v1",
+  "status": "ready_for_owner_approval",
+  "execution_mode": "local-offline",
+  "authorization_boundary": {
+    "active_milestone": "MIL-001",
+    "later_milestones_started": false,
+    "paid_or_gpu_workload_launched": false,
+    "modal_job_submitted": false,
+    "real_organizer_data_processed_or_transferred": false
+  },
+  "runtime_candidate": {
+    "python": "3.12.7",
+    "platform": "Windows",
+    "architecture": "AMD64",
+    "bm25_runtime_compatibility_id": "bm25rt.v1-cpython-3.12.7-windows-10.0.26200-x86_64-ucrt-10.0.26100.8875",
+    "python_dll_sha256": "91372108712b2165305a5e6ddb2f8b505cfda8154209da008cba3e7b255e3997",
+    "ucrtbase_dll_sha256": "5e7709a6b71bb818260b6f05c5bb3b6ca0c3ca9bc2f58c6242c1cd9d826d0079"
+  },
+  "locked_direct_versions": {
+    "runtime": {
+      "pydantic": "2.13.4",
+      "pyyaml": "6.0.3"
+    },
+    "scorer": {
+      "numpy": "2.5.1",
+      "nltk": "3.10.0",
+      "absl-py": "2.5.0",
+      "six": "1.17.0"
+    },
+    "optional_infrastructure_cli_only": {
+      "modal": "1.5.2",
+      "m-gpux": "2.9.4"
+    },
+    "development": {
+      "uv": "0.11.32",
+      "uv-build": "0.11.31",
+      "ruff": "0.15.22",
+      "mypy": "2.3.0",
+      "types-pyyaml": "6.0.12.20260518",
+      "pytest": "9.1.1",
+      "coverage": "7.15.4",
+      "pytest-cov": "7.1.0"
+    }
+  },
+  "checksums": {
+    "uv_lock": "sha256:0361510a2416df1e0bfd9d0b7a4685268798a80f3a5e6cf931ca62355244a352",
+    "package_manifest": "sha256:941161550709f212d8e55fff30b9a203db996b07638f5d3a61e1604cea675810",
+    "resource_manifest": "sha256:ae85906c31b1dc8ee9dd59640f5add865cca38b5f57a74dd035dcd04afd19f4b",
+    "nltk_license_manifest": "sha256:2918c8c6e41549719402ff7e9507c7bd1d9fb8c0aa4b7050f2d880a6e1f05de0",
+    "wordnet_archive": "sha256:cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59",
+    "omw_1_4_archive": "sha256:3b941e664852f3297b6040236626065796a2aaf7d7f9eec8779a3beaa1096c2d",
+    "scorer_fixture": "sha256:9d896042a31d5095cdd759f9a57a4bcd35adbcaa0e046485144636e99e7694ee",
+    "scorer_parity_json": "sha256:220eca601e3d3ec52a51da81b31fa6c0732bccec3ab3d372cae416d29a9e2bea",
+    "scorer_parity_markdown": "sha256:7818588d7b886fbbcbfce1fdcac62fe15e97eee66058ec82c9d7153aa8d7d4d8"
+  },
+  "automated_gates": {
+    "uv_lock_check_offline": "pass",
+    "uv_frozen_sync_all_extras_offline": "pass",
+    "installed_dependency_consistency": {
+      "status": "pass",
+      "package_count_including_project": 65
+    },
+    "ruff_format": "pass",
+    "ruff_lint": "pass",
+    "mypy_strict": "pass",
+    "unit": {
+      "status": "pass",
+      "passed": 161,
+      "skipped": 1,
+      "deselected": 4,
+      "line_coverage_percent": 85.23,
+      "required_percent": 85.0
+    },
+    "integration": {
+      "status": "pass",
+      "passed": 4
+    },
+    "doctor_local_offline": "ready",
+    "scope_data_secret_network_workload_audit": "pass"
+  },
+  "scorer_parity": {
+    "status": "pass",
+    "fixed_cases": 5,
+    "sampled_cases": 24,
+    "threshold": 1e-12,
+    "macro_rouge_l": 0.8061098671443501,
+    "macro_meteor": 0.8525122540358514,
+    "rouge_l_absolute_difference": 0.0,
+    "meteor_absolute_difference": 0.0,
+    "per_query_max_absolute_difference": 0.0,
+    "runtime_nltk_download_calls": 0,
+    "supplied_scoring_sha256": "f04843fbfad26d41356506d8e49692a7c8a0ed1b9f065a3a8472fa6398a5aa95"
+  },
+  "review": {
+    "five_axis_review": "pass",
+    "security_review": "pass",
+    "unresolved_critical_findings": 0,
+    "unresolved_required_findings": 0,
+    "cross_model_review": "skipped_by_owner",
+    "resolved_findings": [
+      "pin scorer and bundled ROUGE source hashes before isolated AST execution",
+      "look up decomposed filesystem names while hashing canonical NFC paths",
+      "reject duplicate and oversized scorer fixtures",
+      "use exclusive atomic report writes and HTTPS-only configured origins",
+      "separate exact evaluation from parity orchestration and reporting"
+    ]
+  },
+  "data_guard": {
+    "organizer_context_file_count": 8532,
+    "eligible_untracked_data_paths": 1,
+    "eligible_data_scope": "data/fixtures only",
+    "credential_pattern_hits": 0,
+    "forbidden_import_hits": 0,
+    "later_milestone_module_hits": 0
+  },
+  "known_limitations": [
+    "Windows did not grant symlink creation for the real-symlink fixture; a platform-independent is_symlink spy covers the rejection branch and passes.",
+    "uv/pip provides dependency consistency checking but no native offline vulnerability advisory database; no new audit dependency or network access was introduced at the local-offline exit gate.",
+    "The repository began with most project inputs untracked; no files were staged or committed.",
+    "The reconciled ExecPlan replaced a prior untracked plan, so the prior bytes are not recoverable from Git; its relevant decisions and discoveries were retained in the authoritative spec and living plan."
+  ],
+  "blocked_items_unchanged": [
+    "OQ-001 final prediction filename/archive/platform mode",
+    "OQ-002 warm-up/private artifacts",
+    "OQ-003 real-data Modal license/retention/sharing/backup/deletion permission",
+    "OQ-004 authoritative temporal source",
+    "OQ-005 measured resource budgets",
+    "OQ-006 optional research API decision"
+  ],
+  "deferred_until_later_approval": [
+    "BM25 and all indexing",
+    "organizer ingestion and full-corpus work",
+    "real-data Modal and paid GPU execution",
+    "dense retrieval and reranking",
+    "fine-tuning and open-weight generation",
+    "research or external APIs"
+  ],
+  "owner_approval_required": [
+    "locked direct versions and immutable resource manifests",
+    "bm25_runtime_compatibility_id candidate",
+    "MIL-001 exit evidence and permission to enter MIL-002"
+  ]
+}

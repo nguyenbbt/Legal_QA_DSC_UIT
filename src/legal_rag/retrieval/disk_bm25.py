@@ -585,7 +585,12 @@ class DiskBm25Index:
         )
         return self._load_chunks(doc_ids)
 
-    def retrieve(self, query: str) -> SparseRetrievalResult:
+    def retrieve(self, query: str, *, candidate_limit: int = 12) -> SparseRetrievalResult:
+        if candidate_limit < 1 or candidate_limit > 200:
+            _fail(
+                "SPARSE_CANDIDATE_LIMIT_INVALID",
+                "sparse candidate limit must be within [1, 200]",
+            )
         canonical_query = unicodedata.normalize("NFC", query)
         if self.document_count == 0:
             return SparseRetrievalResult(
@@ -641,7 +646,7 @@ class DiskBm25Index:
         ranked = sorted(
             ((doc_id, score) for doc_id, score in scores.items() if score > 0.0),
             key=lambda item: (-item[1], chunk_ids[item[0]]),
-        )[:12]
+        )[:candidate_limit]
         ranked_chunks = self._load_chunks(tuple(doc_id for doc_id, _score in ranked))
         return SparseRetrievalResult(
             query=canonical_query,

@@ -124,8 +124,9 @@ def check_training_authorization(
 
     if not owner_approved:
         blocking.append("OWNER_FT_APPROVAL_MISSING")
-    if not model_btc_approved:
-        blocking.append("MODEL_BTC_APPROVAL_MISSING")
+    # D-056 moves exact-model registration to final promotion/submission. Retain
+    # the legacy field in v1 artifacts for compatibility, but do not gate an
+    # exploratory or fitting workload on it.
     if not parameter_gate_passed:
         blocking.append("PARAMETER_GATE_FAILED")
     if not dataset_provenance_valid:

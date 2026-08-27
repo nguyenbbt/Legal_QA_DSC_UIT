@@ -205,6 +205,21 @@ def _build_parser() -> argparse.ArgumentParser:
     retrieval_run.add_argument("--output", required=True, type=Path)
     retrieval_run.add_argument("--annotation-queue", required=True, type=Path)
     retrieval_run.add_argument("--report", required=True, type=Path)
+    retrieval_select = retrieval_commands.add_parser(
+        "select-evidence",
+        help="apply evidence-set-selector.v2 to a stored ranking",
+        allow_abbrev=False,
+    )
+    retrieval_select.add_argument("--retrieval-output", required=True, type=Path)
+    retrieval_select.add_argument("--annotation-queue", required=True, type=Path)
+    retrieval_select.add_argument("--source-run-id", required=True)
+    retrieval_select.add_argument("--selected-run-id", required=True)
+    retrieval_select.add_argument("--tokenizer-checkpoint", required=True, type=Path)
+    retrieval_select.add_argument("--maximum-input-tokens", type=int, default=2048)
+    retrieval_select.add_argument("--minimum-relative-sparse-score", type=float)
+    retrieval_select.add_argument("--calibration-checksum")
+    retrieval_select.add_argument("--output", required=True, type=Path)
+    retrieval_select.add_argument("--report", required=True, type=Path)
 
     training = commands.add_parser(
         "training", help="build governed local-only training artifacts", allow_abbrev=False
@@ -325,6 +340,31 @@ def _build_parser() -> argparse.ArgumentParser:
     evaluate_retrieval.add_argument("--grounding-manifest", required=True, type=Path)
     evaluate_retrieval.add_argument("--grounding-benchmark", required=True, type=Path)
     evaluate_retrieval.add_argument("--report", required=True, type=Path)
+    evaluate_retrieval_set = evaluate_commands.add_parser(
+        "retrieval-set",
+        help="evaluate stored R0/R2R output with graded evidence-set diagnostics",
+        allow_abbrev=False,
+    )
+    evaluate_retrieval_set.add_argument("--retrieval-output", required=True, type=Path)
+    evaluate_retrieval_set.add_argument("--annotation-queue", required=True, type=Path)
+    evaluate_retrieval_set.add_argument("--grounding-manifest", required=True, type=Path)
+    evaluate_retrieval_set.add_argument("--grounding-benchmark", required=True, type=Path)
+    evaluate_retrieval_set.add_argument("--answer-per-query", type=Path)
+    evaluate_retrieval_set.add_argument("--run-id", required=True)
+    evaluate_retrieval_set.add_argument("--report", required=True, type=Path)
+    evaluate_oracle_build = evaluate_commands.add_parser(
+        "oracle-build",
+        help="build non-promotable bounded-oracle generation inputs",
+        allow_abbrev=False,
+    )
+    evaluate_oracle_build.add_argument("--annotation-queue", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--grounding-manifest", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--grounding-benchmark", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--r0-retrieval", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--r2r-retrieval", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--tokenizer-checkpoint", required=True, type=Path)
+    evaluate_oracle_build.add_argument("--maximum-input-tokens", type=int, default=2048)
+    evaluate_oracle_build.add_argument("--output-directory", required=True, type=Path)
 
     benchmark = commands.add_parser(
         "benchmark", help="record local operational measurements", allow_abbrev=False
@@ -744,6 +784,58 @@ def _run_index(arguments: argparse.Namespace) -> dict[str, str]:
 def _run_retrieval(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
     from legal_rag.domain.checksums import checksum_bytes
+
+    if arguments.retrieval_command == "select-evidence":
+        from legal_rag.generation.qwen3 import PROMPT_A
+        from legal_rag.models.token_counting import Qwen3InputTokenCounter
+        from legal_rag.retrieval.selection_artifacts import (
+            EvidenceSelectionArtifactError,
+            build_evidence_selection_artifacts,
+        )
+
+        retrieval_data = _read_bytes(
+            arguments.retrieval_output,
+            code="EVIDENCE_SELECTION_INPUT_INVALID",
+            message="retrieval output is unavailable",
+            exit_code=2,
+        )
+        queue_data = _read_bytes(
+            arguments.annotation_queue,
+            code="EVIDENCE_SELECTION_INPUT_INVALID",
+            message="annotation queue is unavailable",
+            exit_code=2,
+        )
+        try:
+            counter = Qwen3InputTokenCounter.from_checkpoint(
+                arguments.tokenizer_checkpoint,
+                system_prompt=PROMPT_A,
+            )
+            selection_artifacts = build_evidence_selection_artifacts(
+                annotation_queue_data=queue_data,
+                retrieval_output_data=retrieval_data,
+                source_run_id=arguments.source_run_id,
+                selected_run_id=arguments.selected_run_id,
+                maximum_input_tokens=arguments.maximum_input_tokens,
+                token_counter=counter,
+                minimum_relative_sparse_score=arguments.minimum_relative_sparse_score,
+                calibration_checksum=arguments.calibration_checksum,
+            )
+            output_checksum = write_immutable_bytes(
+                arguments.output, selection_artifacts.retrieval_output
+            )
+            report_checksum = write_immutable_bytes(
+                arguments.report, selection_artifacts.selection_report
+            )
+        except (EvidenceSelectionArtifactError, ImmutableArtifactError, RuntimeError) as error:
+            code = getattr(error, "code", "EVIDENCE_SELECTION_FAILED")
+            message = getattr(error, "message", str(error))
+            raise CliError(code, message, exit_code=2) from error
+        return {
+            "summary": (
+                f"EVIDENCE SELECTION COMPLETE output={output_checksum} report={report_checksum}"
+            )
+        }
+
     from legal_rag.evaluation.real_retrieval import RealRetrievalError, run_development_retrieval
     from legal_rag.retrieval.disk_bm25 import DiskBm25Error, open_disk_bm25_index
     from legal_rag.retrieval.exact import AliasArtifactError, load_frozen_alias_artifact
@@ -1421,6 +1513,118 @@ def _run_retrieval_evaluation(arguments: argparse.Namespace) -> dict[str, str]:
     }
 
 
+def _run_retrieval_set_evaluation(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.evaluation.retrieval_set_evaluation import (
+        RetrievalSetArtifactError,
+        evaluate_stored_retrieval_set,
+    )
+
+    required_paths = {
+        "retrieval_output_data": arguments.retrieval_output,
+        "annotation_queue_data": arguments.annotation_queue,
+        "benchmark_manifest_data": arguments.grounding_manifest,
+        "benchmark_data": arguments.grounding_benchmark,
+    }
+    inputs = {
+        name: _read_bytes(
+            path,
+            code="RETRIEVAL_SET_INPUT_INVALID",
+            message="retrieval set-evaluation input is unavailable",
+            exit_code=2,
+        )
+        for name, path in required_paths.items()
+    }
+    answer_data = (
+        _read_bytes(
+            arguments.answer_per_query,
+            code="RETRIEVAL_SET_INPUT_INVALID",
+            message="answer per-query metrics are unavailable",
+            exit_code=2,
+        )
+        if arguments.answer_per_query is not None
+        else None
+    )
+    try:
+        rendered = evaluate_stored_retrieval_set(
+            **inputs,
+            answer_per_query_data=answer_data,
+            run_id=arguments.run_id,
+        )
+        report_checksum = write_immutable_bytes(arguments.report, rendered)
+    except (RetrievalSetArtifactError, ImmutableArtifactError) as error:
+        raise CliError(error.code, error.message, exit_code=2) from error
+    report = json.loads(rendered)
+    metrics = report["metrics"]
+    return {
+        "summary": (
+            "RETRIEVAL SET EVALUATION COMPLETE "
+            f"run={report['run_id']} evaluable={metrics['retrieval_evaluable_count']} "
+            f"{report_checksum}"
+        )
+    }
+
+
+def _run_oracle_build(arguments: argparse.Namespace) -> dict[str, str]:
+    from legal_rag.domain.artifacts import ImmutableArtifactError, write_immutable_bytes
+    from legal_rag.evaluation.oracle_artifacts import (
+        OracleArtifactError,
+        build_bounded_oracle_artifacts,
+    )
+    from legal_rag.generation.qwen3 import PROMPT_A
+    from legal_rag.models.token_counting import Qwen3InputTokenCounter
+
+    paths = {
+        "annotation_queue_data": arguments.annotation_queue,
+        "benchmark_manifest_data": arguments.grounding_manifest,
+        "benchmark_data": arguments.grounding_benchmark,
+        "r0_retrieval_output_data": arguments.r0_retrieval,
+        "r2r_retrieval_output_data": arguments.r2r_retrieval,
+    }
+    inputs = {
+        name: _read_bytes(
+            path,
+            code="ORACLE_INPUT_INVALID",
+            message="bounded-oracle input is unavailable",
+            exit_code=2,
+        )
+        for name, path in paths.items()
+    }
+    try:
+        counter = Qwen3InputTokenCounter.from_checkpoint(
+            arguments.tokenizer_checkpoint,
+            system_prompt=PROMPT_A,
+        )
+        artifacts = build_bounded_oracle_artifacts(
+            **inputs,
+            maximum_input_tokens=arguments.maximum_input_tokens,
+            token_counter=counter,
+        )
+        outputs = {
+            "eligible-annotation-queue.v1.jsonl": artifacts.eligible_annotation_queue,
+            "O2-retrieval.v1.jsonl": artifacts.o2_retrieval_output,
+            "O3-retrieval.v1.jsonl": artifacts.o3_retrieval_output,
+            "O4-retrieval.v1.jsonl": artifacts.o4_retrieval_output,
+            "oracle-selection-report.v1.json": artifacts.selection_report,
+        }
+        checksums = tuple(
+            write_immutable_bytes(arguments.output_directory / name, data)
+            for name, data in outputs.items()
+        )
+    except (OracleArtifactError, ImmutableArtifactError, RuntimeError, ValueError) as error:
+        code = getattr(error, "code", "ORACLE_BUILD_FAILED")
+        message = getattr(error, "message", str(error))
+        raise CliError(code, message, exit_code=2) from error
+    report = json.loads(artifacts.selection_report)
+    return {
+        "summary": (
+            "ORACLE BUILD COMPLETE "
+            f"eligible={report['generation_eligible_count']} "
+            f"unresolved={report['unresolved_count']} outputs={len(checksums)}"
+        )
+    }
+
+
 def _run_evaluate(arguments: argparse.Namespace) -> dict[str, str]:
     from legal_rag.evaluation.competition import (
         CompetitionEvaluationError,
@@ -1431,6 +1635,10 @@ def _run_evaluate(arguments: argparse.Namespace) -> dict[str, str]:
 
     if arguments.evaluate_command == "retrieval":
         return _run_retrieval_evaluation(arguments)
+    if arguments.evaluate_command == "retrieval-set":
+        return _run_retrieval_set_evaluation(arguments)
+    if arguments.evaluate_command == "oracle-build":
+        return _run_oracle_build(arguments)
     if arguments.evaluate_command != "competition" or arguments.mode != "official_exact":
         raise CliError("EVAL_COMMAND_INVALID", "evaluation command is invalid", exit_code=2)
     predictions = _read_bytes(

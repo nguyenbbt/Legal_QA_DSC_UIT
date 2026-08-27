@@ -98,3 +98,12 @@ def test_union_keeps_only_first_twelve_candidates() -> None:
     assert [item.sparse_score for item in ranked] == list(
         reversed([float(index) for index in range(3, 15)])
     )
+
+
+def test_union_supports_a_versioned_larger_candidate_pool() -> None:
+    sparse = tuple(candidate(index, exact=False, sparse=float(index)) for index in range(1, 110))
+
+    ranked = union_rank_candidates(exact=(), sparse=sparse, candidate_limit=100)
+
+    assert len(ranked) == 100
+    assert ranked[0].sparse_score == 109.0

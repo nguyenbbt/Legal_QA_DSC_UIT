@@ -13,6 +13,7 @@ from legal_rag.domain.models import (
     AbsoluteHttpUrl,
     FrozenStrictModel,
     GeneratorId,
+    NonNegativeInt,
     Sha256,
 )
 
@@ -26,6 +27,8 @@ ArtifactClass = Literal[
     "log",
     "billing",
     "checksummed_manifest",
+    "public_generation_request",
+    "public_generation_response",
     "organizer_question",
     "organizer_context",
     "organizer_answer",
@@ -54,9 +57,25 @@ _LOCAL_TO_MODAL_CLASSES = frozenset(
         "public_model",
         "public_tokenizer",
         "non_sensitive_config",
+        "public_generation_request",
     }
 )
-_MODAL_TO_LOCAL_CLASSES = frozenset({"fixture_output", "log", "billing", "checksummed_manifest"})
+_MODAL_TO_LOCAL_CLASSES = frozenset(
+    {
+        "fixture_output",
+        "log",
+        "billing",
+        "checksummed_manifest",
+        "public_generation_response",
+    }
+)
+_D052_APPROVAL = "APPROVE_OQ003_MODAL_A10_PUBLIC_GENERATION_V1"
+_D061_APPROVAL = "APPROVE_D061_BASE_RERANKER_PUBLIC_DIAGNOSTIC"
+_D052_TRANSFER_CLASSES = frozenset({"public_generation_request", "public_generation_response"})
+_PUBLIC_GENERATION_JOB_IDS = {
+    _D052_APPROVAL: "public-generation-v1",
+    _D061_APPROVAL: "d061-base-reranker-public-v1",
+}
 _JOB_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*\Z")
 _BEARER_VALUE = re.compile(r"(?i)(Authorization\s*:\s*Bearer\s+)[^\s]+")
 
@@ -85,6 +104,14 @@ def _require_origin(value: str) -> None:
     parsed = urlsplit(value)
     if parsed.scheme != "https" or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
         raise ValueError("configured endpoint must be an HTTPS origin")
+
+
+def _is_exact_d052_transfer(transfer: ArtifactTransfer) -> bool:
+    expected = {
+        "public_generation_request": ("public.generation.request", "local-to-modal"),
+        "public_generation_response": ("public.generation.response", "modal-to-local"),
+    }
+    return (transfer.artifact_id, transfer.direction) == expected.get(transfer.artifact_class)
 
 
 class ArtifactTransfer(FrozenStrictModel, frozen=True):
@@ -153,7 +180,7 @@ class LocalOfflineConfig(FrozenStrictModel, frozen=True):
 
 
 class PrivateModalConfig(FrozenStrictModel, frozen=True):
-    """Interim OQ-003-blocked private Modal preflight configuration."""
+    """Private Modal preflight with exact approved public-generation exceptions."""
 
     schema_version: Literal["execution.mode.v1"]
     mode: Literal["private-modal"]
@@ -164,7 +191,17 @@ class PrivateModalConfig(FrozenStrictModel, frozen=True):
     private_storage_ids: tuple[GeneratorId, ...]
     required_resource_ids: tuple[GeneratorId, ...]
     transfer_allowlist: tuple[ArtifactTransfer, ...]
-    real_data_approved: Literal[False]
+    real_data_approved: bool
+    approval_id: Literal[
+        "none",
+        "APPROVE_OQ003_MODAL_A10_PUBLIC_GENERATION_V1",
+        "APPROVE_D061_BASE_RERANKER_PUBLIC_DIAGNOSTIC",
+    ] = "none"
+    modal_function_io_retention_days_maximum: NonNegativeInt = 0
+    gpu: Literal["none", "A10"] = "none"
+    maximum_gpu_containers: NonNegativeInt = 0
+    maximum_account_cost_usd: NonNegativeInt = 0
+    private_storage_access: Literal["read-only", "read-write"] = "read-write"
     max_submission_retries: Literal[3]
     submission_backoff_seconds: tuple[Literal[1], Literal[2], Literal[4]]
     declared_job_identity: GeneratorId
@@ -187,11 +224,39 @@ class PrivateModalConfig(FrozenStrictModel, frozen=True):
             set(self.transfer_allowlist)
         ):
             raise ValueError("transfer_allowlist must be non-empty and unique")
-        if any(
-            transfer.artifact_class in _REAL_OR_DERIVED_CLASSES
-            for transfer in self.transfer_allowlist
+        transfer_classes = frozenset(
+            transfer.artifact_class for transfer in self.transfer_allowlist
+        )
+        if self.approval_id in _PUBLIC_GENERATION_JOB_IDS:
+            if (
+                not self.real_data_approved
+                or self.modal_function_io_retention_days_maximum != 7
+                or self.gpu != "A10"
+                or self.maximum_gpu_containers != 1
+                or self.maximum_account_cost_usd != 30
+                or self.private_storage_access != "read-only"
+                or self.control_plane_origin != "https://api.modal.com"
+                or self.control_plane_origin_allowlist != ("https://api.modal.com",)
+                or self.private_storage_ids != ("qwen3-public-model",)
+                or self.required_resource_ids != ("model.public",)
+                or self.declared_job_identity != _PUBLIC_GENERATION_JOB_IDS[self.approval_id]
+                or not transfer_classes.issubset(_D052_TRANSFER_CLASSES)
+                or len(self.transfer_allowlist) != 1
+                or not _is_exact_d052_transfer(self.transfer_allowlist[0])
+            ):
+                raise ValueError("approved public Modal configuration exceeds its exact scope")
+        elif (
+            self.real_data_approved
+            or self.modal_function_io_retention_days_maximum != 0
+            or self.gpu != "none"
+            or self.maximum_gpu_containers != 0
+            or self.maximum_account_cost_usd != 0
+            or self.private_storage_access != "read-write"
+            or transfer_classes.intersection(_D052_TRANSFER_CLASSES)
         ):
-            raise ValueError("real and derived data cannot enter the interim allowlist")
+            raise ValueError("real-data Modal configuration requires an exact approval")
+        if transfer_classes.intersection(_REAL_OR_DERIVED_CLASSES):
+            raise ValueError("real and derived data cannot enter a transfer allowlist")
         return self
 
 

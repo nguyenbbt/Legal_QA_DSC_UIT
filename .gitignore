@@ -246,3 +246,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ignore data and md files
+data/
+*.md

@@ -12,6 +12,7 @@ from typing import Any
 
 from legal_rag.domain.checksums import checksum_file
 from legal_rag.models.manifest import ModelManifestError
+from legal_rag.retrieval.qwen3_reranker_prompt import build_qwen3_reranker_prompt
 
 
 def _dependencies() -> tuple[Any, Any, Any, Any]:
@@ -23,6 +24,16 @@ def _dependencies() -> tuple[Any, Any, Any, Any]:
             "MODEL_DEPENDENCY_MISSING", "install the locked model optional dependencies"
         ) from error
     return torch, AutoModel, AutoModelForCausalLM, AutoTokenizer
+
+
+def _peft_dependency() -> Any:
+    try:
+        from peft import PeftModel
+    except ImportError as error:
+        raise ModelManifestError(
+            "MODEL_DEPENDENCY_MISSING", "install the locked model-training dependencies"
+        ) from error
+    return PeftModel
 
 
 def _local_directory(path: Path) -> str:
@@ -138,11 +149,6 @@ class Qwen3EmbeddingBackend:
 class Qwen3RerankerBackend:
     """Local yes/no Qwen3 causal reranker over a caller-bounded candidate pool."""
 
-    _SYSTEM = (
-        "Judge whether the Document meets the requirements based on the Query and "
-        "the Instruct provided. Note that the answer can only be yes or no."
-    )
-
     def __init__(
         self,
         checkpoint: Path,
@@ -185,11 +191,10 @@ class Qwen3RerankerBackend:
         return int(ids[0])
 
     def _prompt(self, query: str, document: str) -> str:
-        user = f"<Instruct>: {self._instruction}\n<Query>: {query}\n<Document>: {document}"
-        return (
-            f"<|im_start|>system\n{self._SYSTEM}<|im_end|>\n"
-            f"<|im_start|>user\n{user}<|im_end|>\n"
-            "<|im_start|>assistant\n<think>\n\n</think>\n\n"
+        return build_qwen3_reranker_prompt(
+            instruction=self._instruction,
+            query=query,
+            document=document,
         )
 
     def score(self, query: str, documents: Sequence[str]) -> list[float]:
@@ -211,6 +216,46 @@ class Qwen3RerankerBackend:
                 probabilities = self._torch.softmax(logits.float(), dim=-1)[:, 1]
             scores.extend(probabilities.cpu().tolist())
         return scores
+
+
+class Qwen3AdapterRerankerBackend(Qwen3RerankerBackend):
+    """Local Qwen3 reranking with one immutable, inference-only PEFT adapter."""
+
+    def __init__(
+        self,
+        checkpoint: Path,
+        adapter_checkpoint: Path,
+        *,
+        model_id: str,
+        model_revision: str,
+        adapter_id: str,
+        instruction: str,
+        device: str = "cuda",
+        batch_size: int = 2,
+        maximum_length: int = 8192,
+    ) -> None:
+        super().__init__(
+            checkpoint,
+            model_id=model_id,
+            model_revision=model_revision,
+            instruction=instruction,
+            device=device,
+            batch_size=batch_size,
+            maximum_length=maximum_length,
+        )
+        adapter = _local_adapter_directory(adapter_checkpoint)
+        adapter_path = Path(adapter)
+        self.adapter_id = adapter_id
+        self.adapter_checksum = checksum_file(adapter_path / "adapter_model.safetensors")
+        self.adapter_config_checksum = checksum_file(adapter_path / "adapter_config.json")
+        peft_model = _peft_dependency()
+        self._model = peft_model.from_pretrained(
+            self._model,
+            adapter,
+            is_trainable=False,
+            local_files_only=True,
+        )
+        self._model.eval()
 
 
 class Qwen3GeneratorBackend:
@@ -273,6 +318,98 @@ class Qwen3GeneratorBackend:
                 do_sample=False,
                 max_new_tokens=self._maximum_new_tokens,
                 pad_token_id=self._tokenizer.eos_token_id,
+            )
+        continuation = generated[0, inputs["input_ids"].shape[1] :]
+        return str(self._tokenizer.decode(continuation, skip_special_tokens=True)).strip()
+
+
+class Qwen25GeneratorBackend:
+    """Deterministic local Qwen2.5 generator with optional FP16 CPU offload."""
+
+    def __init__(
+        self,
+        checkpoint: Path,
+        *,
+        model_id: str,
+        model_revision: str,
+        device: str = "cuda",
+        device_map: str | dict[str, int | str] | None = None,
+        max_memory: dict[int | str, int | str] | None = None,
+        offload_folder: Path | None = None,
+        maximum_input_tokens: int = 2048,
+        maximum_new_tokens: int = 512,
+    ) -> None:
+        torch, _, auto_causal, auto_tokenizer = _dependencies()
+        if maximum_input_tokens < 1 or maximum_new_tokens < 1:
+            raise ValueError("generator token limits must be positive")
+        if device_map is not None and (max_memory is None or offload_folder is None):
+            raise ValueError("device-map loading requires max_memory and an offload folder")
+        local = _local_directory(checkpoint)
+        self.model_id = model_id
+        self.model_revision = model_revision
+        self._torch = torch
+        self._maximum_input_tokens = maximum_input_tokens
+        self._maximum_new_tokens = maximum_new_tokens
+        self._tokenizer = auto_tokenizer.from_pretrained(
+            local, local_files_only=True, trust_remote_code=False
+        )
+        load_kwargs: dict[str, Any] = {
+            "local_files_only": True,
+            "trust_remote_code": False,
+            "dtype": torch.float16 if device != "cpu" or device_map is not None else torch.float32,
+        }
+        if device_map is None:
+            self._model = auto_causal.from_pretrained(local, **load_kwargs).to(device)
+            self._input_device = device
+        else:
+            assert max_memory is not None
+            assert offload_folder is not None
+            offload_folder.mkdir(parents=True, exist_ok=True)
+            load_kwargs.update(
+                {
+                    "device_map": device_map,
+                    "max_memory": max_memory,
+                    "offload_folder": str(offload_folder.resolve()),
+                    "offload_state_dict": True,
+                }
+            )
+            self._model = auto_causal.from_pretrained(local, **load_kwargs)
+            self._input_device = self._model.get_input_embeddings().weight.device
+        self._model.eval()
+
+    def generate(self, *, system_prompt: str, question: str, evidence: Sequence[str]) -> str:
+        if not evidence:
+            raise ValueError("generator requires at least one frozen evidence passage")
+        evidence_text = "\n\n".join(
+            f"[EVIDENCE {index}]\n{text}" for index, text in enumerate(evidence, start=1)
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {
+                "role": "user",
+                "content": f"Câu hỏi:\n{question}\n\nCăn cứ được cung cấp:\n{evidence_text}",
+            },
+        ]
+        rendered = self._tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        inputs = self._tokenizer(
+            rendered,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self._maximum_input_tokens,
+        ).to(self._input_device)
+        pad_token_id = self._tokenizer.pad_token_id
+        if pad_token_id is None:
+            pad_token_id = self._tokenizer.eos_token_id
+        with self._torch.inference_mode():
+            generated = self._model.generate(
+                **inputs,
+                do_sample=False,
+                max_new_tokens=self._maximum_new_tokens,
+                pad_token_id=pad_token_id,
             )
         continuation = generated[0, inputs["input_ids"].shape[1] :]
         return str(self._tokenizer.decode(continuation, skip_special_tokens=True)).strip()
@@ -341,7 +478,9 @@ class Qwen3AdapterGeneratorBackend(Qwen3GeneratorBackend):
 
 
 __all__ = [
+    "Qwen25GeneratorBackend",
     "Qwen3AdapterGeneratorBackend",
+    "Qwen3AdapterRerankerBackend",
     "Qwen3EmbeddingBackend",
     "Qwen3GeneratorBackend",
     "Qwen3RerankerBackend",

@@ -147,12 +147,28 @@ def test_fine_tuning_requires_every_independent_gate() -> None:
     assert authorization.can_proceed is False
     assert authorization.blocking_codes == (
         "OWNER_FT_APPROVAL_MISSING",
-        "MODEL_BTC_APPROVAL_MISSING",
         "PARAMETER_GATE_FAILED",
         "DATASET_PROVENANCE_INVALID",
         "BACKEND_NOT_AUTHORIZED",
         "OQ003_UNRESOLVED",
     )
+
+
+def test_experimental_fine_tuning_does_not_require_prior_model_registration() -> None:
+    authorization = check_training_authorization(
+        action="FT-RERANK",
+        milestone="R-008",
+        owner_approved=True,
+        model_btc_approved=False,
+        parameter_gate_passed=True,
+        dataset_provenance_valid=True,
+        backend_authorized=True,
+        oq003_resolved=True,
+        backend="private-modal",
+    )
+
+    assert authorization.can_proceed is True
+    assert authorization.blocking_codes == ()
 
 
 def test_no_ft_records_no_workload_decision() -> None:

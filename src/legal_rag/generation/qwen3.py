@@ -12,6 +12,15 @@ Chỉ trả lời dựa trên các căn cứ được cung cấp. Không suy di�
 Trả lời trực tiếp, chính xác và súc tích bằng tiếng Việt. Nêu điều, khoản hoặc điểm khi căn cứ
 có thông tin đó. Nếu căn cứ không đủ để trả lời, hãy nói rõ rằng chưa đủ căn cứ."""
 
+PROMPT_B = """Bạn là trợ lý hỏi đáp pháp luật Việt Nam.
+Chỉ sử dụng những căn cứ được cung cấp có nội dung trực tiếp trả lời câu hỏi; bỏ qua đoạn nhiễu
+hoặc chỉ trùng từ khóa. Không sao chép các nhãn [EVIDENCE n] vào câu trả lời.
+Trả lời đầy đủ tất cả nội dung được hỏi bằng tiếng Việt. Khi căn cứ có điều, khoản, điểm, thời hạn,
+mức phạt, điều kiện, thủ tục hoặc danh sách thì nêu chính xác và đầy đủ các ý được căn cứ hỗ trợ.
+Trình bày căn cứ pháp lý, nội dung quy định, rồi kết luận trực tiếp. Không bổ sung thông tin,
+đối tượng, con số hoặc kết luận không có trong căn cứ. Nếu căn cứ không đủ, nói rõ phần nào chưa
+đủ căn cứ thay vì suy diễn."""
+
 
 class LocalGeneratorBackend(Protocol):
     model_id: str
@@ -65,4 +74,4 @@ class Qwen3LegalGenerator:
         )
 
 
-__all__ = ["LocalGeneratorBackend", "PROMPT_A", "Qwen3LegalGenerator"]
+__all__ = ["LocalGeneratorBackend", "PROMPT_A", "PROMPT_B", "Qwen3LegalGenerator"]

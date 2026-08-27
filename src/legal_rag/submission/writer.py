@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, NoReturn
@@ -17,6 +19,8 @@ from legal_rag.ingestion.organizer import (
     OrganizerQuestionReader,
     OrganizerQuestionSource,
 )
+
+SUBMISSION_SCHEMA_VERSION = "organizer.prediction.answer-only.v2"
 
 
 class _RawObject(list[tuple[str, Any]]):
@@ -120,13 +124,25 @@ def build_submission(source_bytes: bytes, answers: tuple[AnswerRecord, ...]) -> 
 
     output: dict[str, dict[str, str]] = {}
     for source_record, answer in zip(source, answers, strict=True):
-        fields: dict[str, str] = {}
-        for field in source_record.field_order:
-            fields[field] = source_record.question if field == "question" else answer.answer
-        output[source_record.original_id] = fields
+        output[source_record.original_id] = {"answer": answer.answer}
     rendered = _render(output)
     validate_submission(source_bytes, rendered)
     return rendered
+
+
+def build_submission_zip(submission_bytes: bytes) -> bytes:
+    """Package one canonical root `submission.json` with deterministic ZIP metadata."""
+
+    if not submission_bytes:
+        _fail("SUB_SCHEMA_INVALID", "submission bytes must be non-empty")
+    output = io.BytesIO()
+    entry = zipfile.ZipInfo("submission.json", date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.create_system = 0
+    entry.external_attr = 0
+    with zipfile.ZipFile(output, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(entry, submission_bytes)
+    return output.getvalue()
 
 
 def _decode_predictions(data: bytes) -> _RawObject:
@@ -164,32 +180,23 @@ def validate_submission(source_bytes: bytes, predictions_bytes: bytes) -> Submis
     _, source = _source_records(source_bytes)
     parsed = _decode_predictions(predictions_bytes)
     _reject_duplicates(parsed)
-    source_by_id = {record.original_id: record for record in source}
     normalized: dict[str, dict[str, str]] = {}
 
     for question_id, raw_record in parsed:
         if not isinstance(raw_record, _RawObject):
             _fail("SUB_SCHEMA_INVALID", "each prediction must be an object")
         fields = dict(raw_record)
-        if set(fields) != {"question", "answer"}:
-            _fail("SUB_SCHEMA_INVALID", "prediction fields must be exactly question and answer")
+        if set(fields) != {"answer"}:
+            _fail("SUB_SCHEMA_INVALID", "prediction fields must contain exactly answer")
         answer = fields["answer"]
         if type(answer) is not str or not answer.strip():
             _fail("SUB_EMPTY_ANSWER", "prediction answer must be a non-empty string")
-        question = fields["question"]
-        if type(question) is not str:
-            _fail("SUB_SCHEMA_INVALID", "prediction question must be a string")
-        source_record = source_by_id.get(question_id)
-        if source_record is not None and question != source_record.question:
-            _fail("SUB_QUESTION_MISMATCH", "prediction question differs from source")
         normalized[question_id] = dict(raw_record)
 
     if tuple(normalized) != tuple(record.original_id for record in source):
         _fail("SUB_ID_MISMATCH", "prediction IDs must exactly match source ID order")
-    for question_id, fields in normalized.items():
-        expected_order = source_by_id[question_id].field_order
-        if tuple(fields) != expected_order:
-            _fail("SUB_SCHEMA_INVALID", "prediction field order must match source")
+    if any(tuple(fields) != ("answer",) for fields in normalized.values()):
+        _fail("SUB_SCHEMA_INVALID", "answer must be the only prediction field")
     if predictions_bytes != _render(normalized):
         _fail("SUB_ENCODING_INVALID", "predictions do not use the canonical byte format")
 

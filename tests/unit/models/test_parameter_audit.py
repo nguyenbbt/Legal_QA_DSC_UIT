@@ -150,9 +150,9 @@ def test_manifest_requires_unique_ordered_roles() -> None:
         ({"local_tokenizer_hash": None}, "MODEL_REVISION_UNPINNED"),
         ({"license": None}, "MODEL_LICENSE_MISSING"),
         ({"parameter_audit_checksum": None}, "MODEL_PARAMETER_AUDIT_MISSING"),
-        ({"btc_approval_state": "pending"}, "MODEL_BTC_APPROVAL_MISSING"),
-        ({"btc_approval_state": "rejected"}, "MODEL_BTC_APPROVAL_MISSING"),
-        ({"btc_approval_evidence": None}, "MODEL_BTC_APPROVAL_MISSING"),
+        ({"btc_approval_state": "pending"}, "MODEL_COMPETITION_REGISTRATION_MISSING"),
+        ({"btc_approval_state": "rejected"}, "MODEL_COMPETITION_REGISTRATION_MISSING"),
+        ({"btc_approval_evidence": None}, "MODEL_COMPETITION_REGISTRATION_MISSING"),
     ),
 )
 def test_official_profile_fails_closed(changes: dict[str, object], expected_code: str) -> None:
@@ -176,6 +176,19 @@ def test_official_preflight_error_precedence_is_stable() -> None:
         validate_official_profile(_manifest(component))
 
     assert exc.value.code == "MODEL_REVISION_UNPINNED"
+
+
+def test_experiment_profile_accepts_an_unregistered_but_fully_audited_model() -> None:
+    from legal_rag.models.approval import validate_experiment_profile
+
+    validate_experiment_profile(
+        _manifest(
+            _component(
+                btc_approval_state="pending",
+                btc_approval_evidence=None,
+            )
+        )
+    )
 
 
 def test_manifest_checksum_is_deterministic_and_material() -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from legal_rag.domain.checksums import checksum_bytes
 from legal_rag.domain.models import Evidence, QuestionRecord
-from legal_rag.generation.qwen3 import Qwen3LegalGenerator
+from legal_rag.generation.qwen3 import PROMPT_A, PROMPT_B, Qwen3LegalGenerator
 
 
 class _Backend:
@@ -86,3 +86,11 @@ def test_generator_fails_closed_without_evidence_and_does_not_call_backend() -> 
     assert answer.used_evidence_ids == ()
     assert answer.answer_text.startswith("Không đủ căn cứ")
     assert backend.evidence == ()
+
+
+def test_prompt_b_encodes_the_development_error_analysis_contract() -> None:
+    assert PROMPT_B != PROMPT_A
+    assert "không sao chép các nhãn [evidence" in PROMPT_B.casefold()
+    assert "đầy đủ tất cả" in PROMPT_B.casefold()
+    assert "không bổ sung" in PROMPT_B.casefold()
+    assert "kết luận trực tiếp" in PROMPT_B.casefold()

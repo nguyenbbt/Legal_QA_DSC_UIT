@@ -36,6 +36,7 @@ def run_grounded_generation_experiment(
         "btc_approved_local_ablation",
         "g3_qlora_local_evaluation",
         "clean_reproducibility",
+        "diagnostic_non_promotable",
     ] = "exploratory_non_promotable",
 ) -> tuple[bytes, bytes, bytes]:
     """Generate answers from exactly the frozen ranked evidence IDs."""

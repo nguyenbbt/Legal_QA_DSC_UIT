@@ -1,0 +1,45 @@
+{
+  "case_counts": {
+    "fixed": 5,
+    "sampled": 24,
+    "total": 29
+  },
+  "dependencies": {
+    "nltk": "3.10.0",
+    "numpy": "2.5.1"
+  },
+  "execution_mode": "local-offline",
+  "metrics": {
+    "meteor": {
+      "absolute_difference": 0.0,
+      "project": 0.8525122540358514,
+      "supplied": 0.8525122540358514
+    },
+    "per_query_max_absolute_difference": 0.0,
+    "rouge_l": {
+      "absolute_difference": 0.0,
+      "project": 0.8061098671443501,
+      "supplied": 0.8061098671443501
+    }
+  },
+  "sample_generation": {
+    "algorithm": "python-random-v1-swap-two-of-seven",
+    "seed": 20260814
+  },
+  "schema_id": "scorer.parity.v1",
+  "status": "pass",
+  "supplied_scorer": {
+    "checksum": "sha256:f04843fbfad26d41356506d8e49692a7c8a0ed1b9f065a3a8472fa6398a5aa95",
+    "entrypoint": "eval_qa",
+    "path": "Scoring-Program-Task-LegalQA/scoring.py",
+    "rouge_source_checksums": {
+      "__init__.py": "sha256:7d007905e3e38fc10b41821cf4f49807732208e683dec8b2ff48ac1c4b2cbc91",
+      "rouge_scorer.py": "sha256:9484c5fd05e22cd28b5053bf9de586b3620cf65b0c38052b8690badd51f31d1a",
+      "scoring.py": "sha256:b3fc153499e484665294ddbaeb876452b40a8fa2120e824b804928c96e3f2c1a",
+      "tokenize.py": "sha256:dc91cea8f09507f744549160c458031d0956e35fa230c80d01f990eba20a7403",
+      "tokenizers.py": "sha256:2b7b9dae505ce8739064ba8e4791b871b13aa1f65bc54e25692f1a9ba8600508"
+    },
+    "top_level_downloads_executed": 0
+  },
+  "threshold": 1e-12
+}

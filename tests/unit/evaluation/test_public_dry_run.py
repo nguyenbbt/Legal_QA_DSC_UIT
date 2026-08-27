@@ -173,6 +173,29 @@ def test_public_evidence_queue_supports_exact_bm25_without_reranking() -> None:
     assert report["reranker_model_id"] is None
 
 
+def test_public_reranker_receives_the_declared_candidate_limit() -> None:
+    _, questions, aliases, _ = _fixture()
+    index = _Index(
+        tuple(
+            _candidate(f"chunk-{position:02d}", f"Evidence {position}", 20.0 - position)
+            for position in range(1, 16)
+        )
+    )
+
+    artifacts = build_public_evidence_queue(
+        questions,
+        index=index,
+        aliases=aliases,
+        reranker=_Reranker(),
+        retrieval_run_id="public-top15-fixture-v1",
+        evidence_limit=1,
+        reranker_candidate_limit=15,
+    )
+
+    rows = tuple(json.loads(line) for line in artifacts.queue_data.splitlines())
+    assert rows[0]["evidence"][0]["evidence_id"] == "chunk-15"
+
+
 def test_public_evidence_queue_resumes_checksum_bound_checkpoints_without_model_calls(
     tmp_path: Path,
 ) -> None:
@@ -227,6 +250,7 @@ def test_public_generation_resumes_checksum_bound_checkpoints_without_model_call
         "checkpoint_directory": tmp_path / "checkpoints",
         "maximum_input_tokens": 128,
         "maximum_new_tokens": 32,
+        "profile_state": "diagnostic_dry_run",
         "frozen_inputs": {
             "index": checksum_bytes(b"index"),
             "parameter_manifest": checksum_bytes(b"parameters"),
@@ -239,8 +263,13 @@ def test_public_generation_resumes_checksum_bound_checkpoints_without_model_call
 
     assert first_backend.calls == 2
     assert second_backend.calls == 0
+    manifest = json.loads(first.manifest_data)
+    assert manifest["profile_state"] == "diagnostic_dry_run"
+    assert manifest["submission_schema_version"] == "organizer.prediction.answer-only.v2"
     assert first.predictions_data == second.predictions_data
-    assert tuple(json.loads(first.predictions_data)) == ("q2", "q1")
+    predictions = json.loads(first.predictions_data)
+    assert tuple(predictions) == ("q2", "q1")
+    assert all(tuple(row) == ("answer",) for row in predictions.values())
     assert first.generated_question_count == 2
     assert first.resumed_question_count == 0
     assert second.generated_question_count == 0
@@ -280,6 +309,7 @@ def test_public_generation_rejects_a_queue_question_that_differs_from_the_source
             checkpoint_directory=tmp_path / "checkpoints",
             maximum_input_tokens=128,
             maximum_new_tokens=32,
+            profile_state="diagnostic_dry_run",
             frozen_inputs={"index": checksum_bytes(b"index")},
         )
 

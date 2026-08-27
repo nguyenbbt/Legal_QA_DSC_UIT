@@ -31,7 +31,12 @@ from legal_rag.generation.fixture import FIXED_REFUSAL
 from legal_rag.ingestion.organizer import OrganizerDataError, OrganizerQuestionReader
 from legal_rag.retrieval.exact import AliasIndex
 from legal_rag.retrieval.reranker import RerankerBackend, RerankerError, rerank_candidates
-from legal_rag.submission.writer import SubmissionError, answers_jsonl_bytes, build_submission
+from legal_rag.submission.writer import (
+    SUBMISSION_SCHEMA_VERSION,
+    SubmissionError,
+    answers_jsonl_bytes,
+    build_submission,
+)
 
 _INPUT_NAME = re.compile(r"[a-z][a-z0-9_]*\Z")
 
@@ -156,6 +161,12 @@ def _load_evidence_queue(data: bytes) -> tuple[PublicEvidenceRow, ...]:
     return rows
 
 
+def load_public_evidence_queue(data: bytes) -> tuple[PublicEvidenceRow, ...]:
+    """Validate and load one checksum-bound public evidence queue."""
+
+    return _load_evidence_queue(data)
+
+
 def build_public_evidence_queue(
     questions: Sequence[QuestionRecord],
     *,
@@ -231,7 +242,12 @@ def build_public_evidence_queue(
                 rows.append(row)
                 resumed_count += 1
                 continue
-            retrieved = retrieve_question(question, index=index, aliases=aliases)
+            retrieved = retrieve_question(
+                question,
+                index=index,
+                aliases=aliases,
+                candidate_limit=reranker_candidate_limit,
+            )
             admitted = retrieved.candidates[:reranker_candidate_limit]
             reranked = (
                 rerank_candidates(
@@ -364,6 +380,7 @@ def run_checkpointed_public_generation(
     checkpoint_directory: Path,
     maximum_input_tokens: int,
     maximum_new_tokens: int,
+    profile_state: Literal["diagnostic_dry_run", "promoted_dry_run"],
     frozen_inputs: Mapping[str, str],
 ) -> PublicGenerationArtifacts:
     """Generate all public answers locally and resume only checksum-identical checkpoints."""
@@ -395,12 +412,14 @@ def run_checkpointed_public_generation(
         or not generator_id.strip()
         or maximum_input_tokens < 1
         or maximum_new_tokens < 1
+        or profile_state not in {"diagnostic_dry_run", "promoted_dry_run"}
     ):
         raise PublicDryRunError(
             "PUBLIC_GENERATION_CONFIG_INVALID", "public generation configuration is invalid"
         )
     fingerprint_value = {
         "schema_version": "public.run-fingerprint.v1",
+        "submission_schema_version": SUBMISSION_SCHEMA_VERSION,
         "run_id": run_id,
         "retrieval_run_id": rows[0].retrieval_run_id,
         "public_source_checksum": checksum_bytes(public_source_data),
@@ -413,6 +432,7 @@ def run_checkpointed_public_generation(
         "maximum_new_tokens": maximum_new_tokens,
         "do_sample": False,
         "enable_thinking": False,
+        "profile_state": profile_state,
         "frozen_inputs": frozen,
     }
     run_fingerprint = checksum_bytes(content_json_bytes(fingerprint_value))
@@ -500,7 +520,6 @@ def run_checkpointed_public_generation(
             "answers_checksum": checksum_bytes(answers_data),
             "predictions_checksum": checksum_bytes(predictions_data),
             "public_results_usage": "validation_only_not_fitting_feedback",
-            "profile_state": "promoted_dry_run",
         }
     )
     telemetry_data = content_json_bytes(
@@ -534,5 +553,6 @@ __all__ = [
     "PublicEvidenceRow",
     "PublicGenerationArtifacts",
     "build_public_evidence_queue",
+    "load_public_evidence_queue",
     "run_checkpointed_public_generation",
 ]

@@ -74,6 +74,7 @@ def test_approved_grounding_benchmark_loads_exact_60_rows() -> None:
     assert len(loaded.records) == 60
     assert loaded.retrieval_labels[0].question_id == "q00"
     assert loaded.retrieval_labels[0].relevant_evidence_ids == ("chunk_000000000000000000000000",)
+    assert loaded.retrieval_labels[0].graded_evidence[0].relevance == "relevant"
 
 
 def test_grounding_benchmark_rejects_unapproved_or_checksum_mismatch() -> None:

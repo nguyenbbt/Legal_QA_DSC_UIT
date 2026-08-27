@@ -16,7 +16,7 @@ from legal_rag.domain.models import (
     Sha256,
 )
 from legal_rag.domain.validation import RecordValidationError, parse_record_json
-from legal_rag.evaluation.retrieval_metrics import RetrievalLabelRow
+from legal_rag.evaluation.retrieval_metrics import GradedEvidenceLabel, RetrievalLabelRow
 
 
 class GroundingLabelError(Exception):
@@ -148,6 +148,13 @@ def load_approved_grounding_benchmark(
                 evidence.evidence_id
                 for evidence in record.relevant_evidence
                 if evidence.relevance in {"relevant", "partially_relevant"}
+            ),
+            graded_evidence=tuple(
+                GradedEvidenceLabel(
+                    evidence_id=evidence.evidence_id,
+                    relevance=evidence.relevance,
+                )
+                for evidence in record.relevant_evidence
             ),
         )
         for record in records

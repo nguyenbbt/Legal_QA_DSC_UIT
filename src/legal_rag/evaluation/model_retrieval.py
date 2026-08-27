@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from dataclasses import asdict
 
@@ -32,9 +33,9 @@ def run_labeled_reranker_experiment(
 ) -> tuple[bytes, bytes]:
     """Rerank the frozen candidate universe and return safe outputs plus metrics."""
 
-    if candidate_limit < 1:
+    if candidate_limit < 1 or candidate_limit > 100:
         raise ModelRetrievalExperimentError(
-            "RERANK_LIMIT_INVALID", "reranker candidate limit must be positive"
+            "RERANK_LIMIT_INVALID", "reranker candidate limit must be within [1, 100]"
         )
     try:
         work_items = tuple(json.loads(line) for line in annotation_queue_data.splitlines())
@@ -66,6 +67,22 @@ def run_labeled_reranker_experiment(
             raise ModelRetrievalExperimentError(
                 "RERANK_EXPERIMENT_INPUT_INVALID", "reranker experiment row is invalid"
             )
+        if any(
+            not isinstance(candidate, dict)
+            or not isinstance(candidate.get("evidence_id"), str)
+            or not candidate["evidence_id"]
+            or not isinstance(candidate.get("display_text"), str)
+            or not candidate["display_text"].strip()
+            for candidate in candidates
+        ):
+            raise ModelRetrievalExperimentError(
+                "RERANK_EXPERIMENT_INPUT_INVALID", "reranker candidate fields are invalid"
+            )
+        candidate_ids = tuple(str(candidate["evidence_id"]) for candidate in candidates)
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ModelRetrievalExperimentError(
+                "RERANK_CANDIDATE_DUPLICATE", "reranker candidate identities must be unique"
+            )
         scores = tuple(
             float(value)
             for value in backend.score(
@@ -75,6 +92,10 @@ def run_labeled_reranker_experiment(
         if len(scores) != len(candidates):
             raise ModelRetrievalExperimentError(
                 "RERANK_OUTPUT_CARDINALITY", "reranker returned the wrong score count"
+            )
+        if any(not math.isfinite(score) for score in scores):
+            raise ModelRetrievalExperimentError(
+                "RERANK_SCORE_NONFINITE", "reranker returned a non-finite score"
             )
         ranked = sorted(
             zip(candidates, scores, strict=True),

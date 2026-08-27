@@ -51,7 +51,13 @@ def union_rank_candidates(
     *,
     exact: tuple[RetrievalCandidate, ...],
     sparse: tuple[RetrievalCandidate, ...],
+    candidate_limit: int = 12,
 ) -> tuple[RetrievalCandidate, ...]:
+    if candidate_limit < 1 or candidate_limit > 200:
+        raise RetrievalFusionError(
+            "RETRIEVAL_CANDIDATE_LIMIT_INVALID",
+            "candidate limit must be within [1, 200]",
+        )
     by_chunk_id: dict[str, RetrievalCandidate] = {}
     for candidate in (*exact, *sparse):
         if candidate.sparse_score is not None and not math.isfinite(candidate.sparse_score):
@@ -72,4 +78,4 @@ def union_rank_candidates(
             candidate.chunk.chunk_id,
         ),
     )
-    return tuple(ranked[:12])
+    return tuple(ranked[:candidate_limit])

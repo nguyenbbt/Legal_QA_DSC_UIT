@@ -46,6 +46,8 @@ FT_RERANK_CENTRAL = LoraRecipe.model_validate(
     }
 )
 
+FT_RERANK_CORRECTIVE_EPOCH_1 = FT_RERANK_CENTRAL.model_copy(update={"epochs": 1})
+
 GENERATOR_QLORA_CENTRAL = LoraRecipe.model_validate(
     {
         "schema_version": "training.recipe.v1",
@@ -90,6 +92,7 @@ def apply_lora(model: Any, recipe: LoraRecipe) -> Any:
 
 __all__ = [
     "FT_RERANK_CENTRAL",
+    "FT_RERANK_CORRECTIVE_EPOCH_1",
     "GENERATOR_QLORA_CENTRAL",
     "LoraRecipe",
     "apply_lora",

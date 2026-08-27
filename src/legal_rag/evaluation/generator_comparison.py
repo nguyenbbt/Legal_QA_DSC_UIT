@@ -33,6 +33,36 @@ _RETRIEVAL_FIXED_FIELDS = (
     "decoding",
     "adapter",
 )
+_PROMPT_FIXED_FIELDS = (
+    "model_id",
+    "model_revision",
+    "retrieval_output_checksum",
+    "annotation_queue_checksum",
+    "references_checksum",
+    "evidence_limit",
+    "decoding",
+    "adapter",
+)
+_MODEL_FIXED_FIELDS = (
+    "prompt_checksum",
+    "retrieval_output_checksum",
+    "annotation_queue_checksum",
+    "references_checksum",
+    "evidence_limit",
+    "decoding",
+    "adapter",
+)
+_POSTPROCESSOR_FIXED_FIELDS = (
+    "model_id",
+    "model_revision",
+    "prompt_checksum",
+    "retrieval_output_checksum",
+    "annotation_queue_checksum",
+    "references_checksum",
+    "evidence_limit",
+    "decoding",
+    "adapter",
+)
 
 
 class GeneratorComparisonError(Exception):
@@ -293,8 +323,156 @@ def compare_retrieval_generation_experiments(
     )
 
 
+def compare_prompt_generation_experiments(
+    *,
+    baseline_per_query_data: bytes,
+    candidate_per_query_data: bytes,
+    baseline_manifest_data: bytes,
+    candidate_manifest_data: bytes,
+    baseline_runtime_seconds: float,
+    candidate_runtime_seconds: float,
+) -> bytes:
+    """Apply EVAL-005 to a prompt-only change with retrieval and decoding fixed."""
+
+    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
+    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
+    if any(
+        baseline_manifest.get(key) != candidate_manifest.get(key) for key in _PROMPT_FIXED_FIELDS
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "prompt-only comparison changed a non-prompt generator input",
+        )
+    comparison = candidate_manifest.get("comparison")
+    if (
+        not isinstance(comparison, dict)
+        or comparison.get("baseline_run_id") != baseline_manifest.get("run_id")
+        or comparison.get("changed_axes") != ["prompt"]
+        or baseline_manifest.get("prompt_checksum") == candidate_manifest.get("prompt_checksum")
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "candidate must declare prompt as its only changed axis",
+        )
+    return _compare_metric_rows(
+        baseline_per_query_data=baseline_per_query_data,
+        candidate_per_query_data=candidate_per_query_data,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_runtime_seconds=baseline_runtime_seconds,
+        candidate_runtime_seconds=candidate_runtime_seconds,
+        schema_version="generator.prompt.comparison.v1",
+        classification="generator_only_single_axis",
+        changed_axes=["prompt"],
+    )
+
+
+def compare_model_generation_experiments(
+    *,
+    baseline_per_query_data: bytes,
+    candidate_per_query_data: bytes,
+    baseline_manifest_data: bytes,
+    candidate_manifest_data: bytes,
+    baseline_runtime_seconds: float,
+    candidate_runtime_seconds: float,
+) -> bytes:
+    """Apply EVAL-005 to one model-only change with retrieval and prompting fixed."""
+
+    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
+    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
+    if any(
+        baseline_manifest.get(key) != candidate_manifest.get(key) for key in _MODEL_FIXED_FIELDS
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "model-only comparison changed retrieval, prompt, decoding, or adapter inputs",
+        )
+    comparison = candidate_manifest.get("comparison")
+    baseline_identity = (
+        baseline_manifest.get("model_id"),
+        baseline_manifest.get("model_revision"),
+    )
+    candidate_identity = (
+        candidate_manifest.get("model_id"),
+        candidate_manifest.get("model_revision"),
+    )
+    if (
+        not isinstance(comparison, dict)
+        or comparison.get("baseline_run_id") != baseline_manifest.get("run_id")
+        or comparison.get("changed_axes") != ["model"]
+        or baseline_identity == candidate_identity
+        or not all(isinstance(value, str) and value.strip() for value in candidate_identity)
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "candidate must declare a pinned model as its only changed axis",
+        )
+    return _compare_metric_rows(
+        baseline_per_query_data=baseline_per_query_data,
+        candidate_per_query_data=candidate_per_query_data,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_runtime_seconds=baseline_runtime_seconds,
+        candidate_runtime_seconds=candidate_runtime_seconds,
+        schema_version="generator.model.comparison.v1",
+        classification="generator_only_single_axis",
+        changed_axes=["model"],
+    )
+
+
+def compare_postprocessed_generation_experiments(
+    *,
+    baseline_per_query_data: bytes,
+    candidate_per_query_data: bytes,
+    baseline_manifest_data: bytes,
+    candidate_manifest_data: bytes,
+    baseline_runtime_seconds: float,
+    candidate_runtime_seconds: float,
+) -> bytes:
+    """Apply EVAL-005 to one answer postprocessor with generation held fixed."""
+
+    baseline_manifest = _object(baseline_manifest_data, label="baseline manifest")
+    candidate_manifest = _object(candidate_manifest_data, label="candidate manifest")
+    if any(
+        baseline_manifest.get(key) != candidate_manifest.get(key)
+        for key in _POSTPROCESSOR_FIXED_FIELDS
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "postprocessor comparison changed generation or retrieval inputs",
+        )
+    comparison = candidate_manifest.get("comparison")
+    postprocessor = candidate_manifest.get("postprocessor")
+    if (
+        not isinstance(comparison, dict)
+        or comparison.get("baseline_run_id") != baseline_manifest.get("run_id")
+        or comparison.get("changed_axes") != ["postprocessor"]
+        or not isinstance(postprocessor, dict)
+        or not isinstance(postprocessor.get("policy_id"), str)
+        or not isinstance(postprocessor.get("policy_checksum"), str)
+    ):
+        _fail(
+            "GENERATOR_COMPARISON_NOT_FIXED",
+            "candidate must declare one identified postprocessor as its only changed axis",
+        )
+    return _compare_metric_rows(
+        baseline_per_query_data=baseline_per_query_data,
+        candidate_per_query_data=candidate_per_query_data,
+        baseline_manifest=baseline_manifest,
+        candidate_manifest=candidate_manifest,
+        baseline_runtime_seconds=baseline_runtime_seconds,
+        candidate_runtime_seconds=candidate_runtime_seconds,
+        schema_version="generator.postprocessor.comparison.v1",
+        classification="generator_output_postprocessor_single_axis",
+        changed_axes=["postprocessor"],
+    )
+
+
 __all__ = [
     "GeneratorComparisonError",
     "compare_generator_experiments",
+    "compare_model_generation_experiments",
+    "compare_postprocessed_generation_experiments",
+    "compare_prompt_generation_experiments",
     "compare_retrieval_generation_experiments",
 ]

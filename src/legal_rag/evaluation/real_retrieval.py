@@ -139,6 +139,7 @@ def retrieve_question(
     *,
     index: RealRetrievalIndex,
     aliases: AliasIndex,
+    candidate_limit: int = 12,
 ) -> RetrievalQuestionResult:
     """Run fail-closed exact resolution and deterministic sparse union for one question."""
 
@@ -156,7 +157,11 @@ def retrieve_question(
     sparse = index.retrieve(question.question)
     return RetrievalQuestionResult(
         question=question,
-        candidates=union_rank_candidates(exact=exact_candidates, sparse=sparse.candidates),
+        candidates=union_rank_candidates(
+            exact=exact_candidates,
+            sparse=sparse.candidates,
+            candidate_limit=candidate_limit,
+        ),
         diagnostics=(*exact_diagnostics, *sparse.diagnostics),
     )
 

@@ -42,18 +42,35 @@ def validate_parameter_audit(model: ModelComponentManifest) -> None:
         _fail("MODEL_PARAMETER_AUDIT_MISSING", model, "has no exact parameter audit")
 
 
-def validate_btc_approval(model: ModelComponentManifest) -> None:
-    """Require explicit approved state and evidence for the exact checkpoint."""
+def validate_competition_registration(model: ModelComponentManifest) -> None:
+    """Require registration evidence for the exact final competition checkpoint."""
     if model.btc_approval_state != "approved" or model.btc_approval_evidence is None:
-        _fail("MODEL_BTC_APPROVAL_MISSING", model, "has no BTC approval evidence")
+        _fail(
+            "MODEL_COMPETITION_REGISTRATION_MISSING",
+            model,
+            "has no competition registration evidence",
+        )
+
+
+def validate_btc_approval(model: ModelComponentManifest) -> None:
+    """Compatibility alias for v1 callers; registration is now a final gate."""
+    validate_competition_registration(model)
 
 
 def validate_model_governance(model: ModelComponentManifest) -> None:
-    """Validate one component in normative preflight precedence order."""
+    """Validate one component for bounded experimentation or fitting."""
     validate_model_revision(model)
     validate_license(model)
     validate_parameter_audit(model)
-    validate_btc_approval(model)
+
+
+def validate_experiment_profile(manifest: ModelParameterManifest) -> None:
+    """Accept an unregistered profile only after every technical audit passes."""
+    validators = (validate_model_revision, validate_license, validate_parameter_audit)
+    for validator in validators:
+        for model in manifest.models:
+            validator(model)
+    validate_parameter_limit(manifest.system_parameter_count)
 
 
 def validate_official_profile(manifest: ModelParameterManifest) -> None:
@@ -62,7 +79,7 @@ def validate_official_profile(manifest: ModelParameterManifest) -> None:
         validate_model_revision,
         validate_license,
         validate_parameter_audit,
-        validate_btc_approval,
+        validate_competition_registration,
     )
     for validator in validators:
         for model in manifest.models:
@@ -83,6 +100,8 @@ __all__ = [
     "ModelManifestError",
     "validate_acquisition_mode",
     "validate_btc_approval",
+    "validate_competition_registration",
+    "validate_experiment_profile",
     "validate_license",
     "validate_model_governance",
     "validate_model_revision",

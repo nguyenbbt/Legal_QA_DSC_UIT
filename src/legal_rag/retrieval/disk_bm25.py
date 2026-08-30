@@ -493,6 +493,8 @@ class DiskBm25Index:
         self.document_count = manifest.document_count
         self.average_length = manifest.average_length
         self.index_checksum = checksum_bytes(manifest_data)
+        self._row_vocabulary_ready = False
+        self._idf_cache: dict[str, float] = {}
 
     def close(self) -> None:
         self._connection.close()
@@ -656,6 +658,125 @@ class DiskBm25Index:
                     chunk=chunk,
                     exact_reference_match=False,
                     sparse_score=score,
+                )
+                for chunk, (_doc_id, score) in zip(ranked_chunks, ranked, strict=True)
+            ),
+            diagnostics=(),
+            index_checksum=self.index_checksum,
+        )
+
+    def retrieve_bounded_top_k(
+        self, query: str, *, candidate_limit: int = 12
+    ) -> SparseRetrievalResult:
+        """Execute the exact frozen BM25 formula in SQLite with bounded Top-K."""
+
+        if candidate_limit < 1 or candidate_limit > 200:
+            _fail(
+                "SPARSE_CANDIDATE_LIMIT_INVALID",
+                "sparse candidate limit must be within [1, 200]",
+            )
+        canonical_query = unicodedata.normalize("NFC", query)
+        if self.document_count == 0:
+            return SparseRetrievalResult(
+                query=canonical_query,
+                query_terms=(),
+                candidates=(),
+                diagnostics=(
+                    RetrievalDiagnostic("SPARSE_INDEX_EMPTY", "BM25 index has no documents"),
+                ),
+                index_checksum=self.index_checksum,
+            )
+        query_terms = ordered_unique_query_terms(canonical_query)
+        if not query_terms:
+            return SparseRetrievalResult(
+                query=canonical_query,
+                query_terms=(),
+                candidates=(),
+                diagnostics=(
+                    RetrievalDiagnostic("SPARSE_QUERY_EMPTY", "query contains no retrieval tokens"),
+                ),
+                index_checksum=self.index_checksum,
+            )
+
+        branches: list[str] = []
+        parameters: list[object] = []
+        if not self._row_vocabulary_ready:
+            self._connection.execute("PRAGMA query_only=OFF")
+            try:
+                self._connection.execute(
+                    """
+                    CREATE VIRTUAL TABLE temp.chunk_vocab_row
+                    USING fts5vocab(main, chunk_terms, 'row')
+                    """
+                )
+            finally:
+                self._connection.execute("PRAGMA query_only=ON")
+            self._row_vocabulary_ready = True
+        for position, term in enumerate(query_terms):
+            encoded_term = _encoded_term(term)
+            idf = self._idf_cache.get(encoded_term)
+            if idf is None:
+                row = self._connection.execute(
+                    "SELECT doc FROM temp.chunk_vocab_row WHERE term=?",
+                    (encoded_term,),
+                ).fetchone()
+                document_frequency = float(row[0]) if row is not None else 0.0
+                ratio = (float(self.document_count) - document_frequency + 0.5) / (
+                    document_frequency + 0.5
+                )
+                idf = math.log1p(ratio)
+                self._idf_cache[encoded_term] = idf
+            branches.append(
+                """
+                SELECT ? AS term_position, chunk_vocab.doc AS doc_id,
+                       COUNT(*) AS term_frequency, ? AS idf
+                FROM chunk_vocab WHERE chunk_vocab.term=?
+                GROUP BY chunk_vocab.doc
+                """
+            )
+            parameters.extend((position, idf, encoded_term))
+
+        term_documents = " UNION ALL ".join(branches)
+        sql = f"""
+            WITH term_documents(term_position, doc_id, term_frequency, idf) AS (
+                {term_documents}
+            ),
+            scored(doc_id, score) AS (
+                SELECT term_documents.doc_id,
+                       SUM(
+                           term_documents.idf *
+                           ((term_documents.term_frequency * (? + 1.0)) /
+                            (term_documents.term_frequency +
+                             (? * ((1.0 - ?) +
+                                   (? * (documents.document_length / ?))))))
+                       ) AS score
+                FROM term_documents
+                JOIN documents ON documents.doc_id = term_documents.doc_id
+                GROUP BY term_documents.doc_id
+            )
+            SELECT scored.doc_id, scored.score
+            FROM scored
+            JOIN documents ON documents.doc_id = scored.doc_id
+            WHERE scored.score > 0.0
+            ORDER BY scored.score DESC, documents.chunk_id ASC
+            LIMIT ?
+        """
+        parameters.extend((BM25_K1, BM25_K1, BM25_B, BM25_B, self.average_length, candidate_limit))
+        ranked = tuple(
+            (int(doc_id), float(score))
+            for doc_id, score in self._connection.execute(sql, parameters)
+        )
+        if any(not math.isfinite(score) for _doc_id, score in ranked):
+            _fail("SPARSE_SCORE_NONFINITE", "BM25 produced a non-finite value")
+        ranked_chunks = self._load_chunks(tuple(doc_id for doc_id, _score in ranked))
+        return SparseRetrievalResult(
+            query=canonical_query,
+            query_terms=query_terms,
+            candidates=tuple(
+                RetrievalCandidate(
+                    chunk=chunk,
+                    exact_reference_match=False,
+                    sparse_score=0.0 if score == 0.0 else score,
                 )
                 for chunk, (_doc_id, score) in zip(ranked_chunks, ranked, strict=True)
             ),

@@ -6,7 +6,9 @@ import json
 import os
 from collections.abc import Iterator
 from dataclasses import asdict, dataclass
+from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
@@ -31,6 +33,30 @@ class DenseStoreManifest:
     storage_dtype: str
     vector_checksum: str
     ids_checksum: str
+
+
+@dataclass(frozen=True, slots=True)
+class DenseStoreAudit:
+    chunk_count: int
+    dimension: int
+    storage_dtype: str
+    missing_chunk_count: int
+    duplicate_chunk_count: int
+    nonfinite_vector_count: int
+    zero_vector_count: int
+    nonunit_vector_count: int
+    deterministic_mapping: bool
+    vector_checksum: str
+    ids_checksum: str
+    manifest_checksum: str
+
+
+def _streaming_checksum(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as stream:
+        while block := stream.read(4 * 1024 * 1024):
+            digest.update(block)
+    return f"sha256:{digest.hexdigest()}"
 
 
 def _chunk_rows(path: Path) -> Iterator[tuple[str, str]]:
@@ -144,27 +170,42 @@ class MemmapDenseIndex:
     def __init__(self, directory: Path, *, block_rows: int = 16_384) -> None:
         if block_rows < 1:
             raise ValueError("dense search block size must be positive")
-        manifest_row = json.loads((directory / "manifest.json").read_bytes())
-        self.manifest = DenseStoreManifest(**manifest_row)
+        manifest_path = directory / "manifest.json"
+        manifest_row = json.loads(manifest_path.read_bytes())
+        self.manifest = _normalized_manifest(manifest_row)
         vector_path = directory / "vectors.f16.npy"
         ids_path = directory / "chunk-ids.jsonl"
         if (
-            checksum_file(vector_path) != self.manifest.vector_checksum
-            or checksum_file(ids_path) != self.manifest.ids_checksum
+            _streaming_checksum(vector_path) != self.manifest.vector_checksum
+            or _streaming_checksum(ids_path) != self.manifest.ids_checksum
         ):
             raise DenseRetrievalError(
                 "DENSE_INDEX_CHECKSUM_MISMATCH", "dense index differs from its manifest"
             )
         self._vectors = np.load(vector_path, mmap_mode="r")
-        self._ids = tuple(
-            json.loads(line)["chunk_id"] for line in ids_path.read_bytes().splitlines()
-        )
+        id_rows = tuple(json.loads(line) for line in ids_path.read_bytes().splitlines())
+        self._ids = tuple(row["chunk_id"] for row in id_rows)
         if (
             self._vectors.shape != (self.manifest.chunk_count, self.manifest.dimension)
             or len(self._ids) != self.manifest.chunk_count
+            or self._vectors.dtype != np.float16
+            or any(row.get("row") != index for index, row in enumerate(id_rows))
+            or any(not isinstance(chunk_id, str) or not chunk_id for chunk_id in self._ids)
+            or len(self._ids) != len(set(self._ids))
         ):
             raise DenseRetrievalError("DENSE_INDEX_SHAPE", "dense index shape is inconsistent")
         self._block_rows = block_rows
+
+    @property
+    def chunk_ids(self) -> tuple[str, ...]:
+        return self._ids
+
+    def vector_blocks(self) -> Iterator[tuple[tuple[str, ...], np.ndarray]]:
+        """Yield stable read-only row blocks without copying the full store."""
+
+        for start in range(0, self.manifest.chunk_count, self._block_rows):
+            stop = min(start + self._block_rows, self.manifest.chunk_count)
+            yield self._ids[start:stop], self._vectors[start:stop]
 
     def retrieve(self, query_embedding: list[float], *, limit: int) -> tuple[DenseHit, ...]:
         query = np.asarray(query_embedding, dtype=np.float32)
@@ -185,4 +226,79 @@ class MemmapDenseIndex:
         return tuple(DenseHit(chunk_id, score) for score, chunk_id in best)
 
 
-__all__ = ["DenseHit", "DenseStoreManifest", "MemmapDenseIndex", "build_dense_store"]
+def _normalized_manifest(value: dict[str, Any]) -> DenseStoreManifest:
+    if value.get("schema_version") == "dense.store.manifest.v1":
+        return DenseStoreManifest(**value)
+    identity = value.get("identity")
+    if value.get("schema_version") != "dense.store.manifest.v2" or not isinstance(identity, dict):
+        raise DenseRetrievalError("DENSE_MANIFEST_INVALID", "dense manifest schema is invalid")
+    try:
+        return DenseStoreManifest(
+            schema_version="dense.store.manifest.v2",
+            model_id=str(identity["model_id"]),
+            model_revision=str(identity["model_revision"]),
+            source_chunk_checksum=str(identity["corpus_checksum"]),
+            chunk_count=int(value["chunk_count"]),
+            dimension=int(identity["dimension"]),
+            storage_dtype=str(identity["storage_dtype"]),
+            vector_checksum=str(value["vector_checksum"]),
+            ids_checksum=str(value["ids_checksum"]),
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise DenseRetrievalError(
+            "DENSE_MANIFEST_INVALID", "dense manifest identity is incomplete"
+        ) from error
+
+
+def audit_dense_store(
+    directory: Path,
+    *,
+    expected_chunk_ids: tuple[str, ...],
+    block_rows: int = 16_384,
+    unit_tolerance: float = 2e-3,
+) -> DenseStoreAudit:
+    """Read every vector and prove the exact canonical row mapping before retrieval."""
+
+    if not expected_chunk_ids or len(expected_chunk_ids) != len(set(expected_chunk_ids)):
+        raise DenseRetrievalError(
+            "DENSE_EXPECTED_MAPPING_INVALID", "expected dense chunk mapping is invalid"
+        )
+    index = MemmapDenseIndex(directory, block_rows=block_rows)
+    missing_count = len(set(expected_chunk_ids) - set(index._ids))
+    nonfinite_count = 0
+    zero_count = 0
+    nonunit_count = 0
+    for start in range(0, index.manifest.chunk_count, block_rows):
+        stop = min(start + block_rows, index.manifest.chunk_count)
+        vectors = np.asarray(index._vectors[start:stop], dtype=np.float32)
+        finite_rows = np.isfinite(vectors).all(axis=1)
+        nonfinite_count += int((~finite_rows).sum())
+        if not finite_rows.any():
+            continue
+        norms = np.linalg.norm(vectors[finite_rows], axis=1)
+        zero_count += int((norms == 0.0).sum())
+        nonunit_count += int((np.abs(norms - 1.0) > unit_tolerance).sum())
+    return DenseStoreAudit(
+        chunk_count=index.manifest.chunk_count,
+        dimension=index.manifest.dimension,
+        storage_dtype=index.manifest.storage_dtype,
+        missing_chunk_count=missing_count,
+        duplicate_chunk_count=len(index._ids) - len(set(index._ids)),
+        nonfinite_vector_count=nonfinite_count,
+        zero_vector_count=zero_count,
+        nonunit_vector_count=nonunit_count,
+        deterministic_mapping=index._ids == expected_chunk_ids,
+        vector_checksum=index.manifest.vector_checksum,
+        ids_checksum=index.manifest.ids_checksum,
+        manifest_checksum=_streaming_checksum(directory / "manifest.json"),
+    )
+
+
+__all__ = [
+    "DenseHit",
+    "DenseStoreAudit",
+    "DenseStoreManifest",
+    "MemmapDenseIndex",
+    "audit_dense_store",
+    "build_dense_store",
+]

@@ -115,6 +115,41 @@ def test_prepare_answer_grounding_artifacts_builds_and_prefills_frozen_queue() -
     assert report["pending_count"] == 0
 
 
+def test_prepare_answer_grounding_artifacts_selects_source_sample_from_full_run() -> None:
+    annotation, retrieval, predictions, source_queue, source_labeled = _fixture_sources()
+    annotation += content_json_bytes(
+        {
+            "question_id": "outside",
+            "question": "Outside",
+            "gold_answer": "Outside gold",
+            "candidates": [{"evidence_id": "outside-e", "display_text": "Outside evidence"}],
+        }
+    )
+    retrieval += content_json_bytes(
+        {"question_id": "outside", "candidates": [{"evidence_id": "outside-e"}]}
+    )
+    prediction_value = json.loads(predictions)
+    prediction_value["outside"] = {"answer": "Outside answer"}
+
+    artifacts = prepare_answer_grounding_artifacts(
+        artifact_prefix="D062",
+        evaluated_run_id="candidate-run",
+        annotation_queue_data=annotation,
+        retrieval_output_data=retrieval,
+        predictions_data=content_json_bytes(prediction_value),
+        source_queue_data=source_queue,
+        source_labeled_data=source_labeled,
+        evidence_limit=3,
+    )
+
+    rows = [
+        json.loads(line)
+        for line in artifacts["D062-answer-grounding-work-queue.v1.jsonl"].splitlines()
+    ]
+    assert len(rows) == 60
+    assert all(row["question_id"] != "outside" for row in rows)
+
+
 def test_prepare_answer_grounding_artifacts_rejects_unsafe_output_prefix() -> None:
     with pytest.raises(ValueError, match="artifact prefix"):
         prepare_answer_grounding_artifacts(
